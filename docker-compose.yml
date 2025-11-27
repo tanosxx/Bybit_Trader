@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  postgres_bybit:
+    image: postgres:15
+    container_name: bybit_db
+    environment:
+      POSTGRES_USER: bybit_user
+      POSTGRES_PASSWORD: bybit_secure_pass_2024
+      POSTGRES_DB: bybit_trader
+    ports:
+      - "5435:5432"
+    volumes:
+      - bybit_db_data:/var/lib/postgresql/data
+    networks:
+      - bybit_network
+    restart: unless-stopped
+
+  bot:
+    build: .
+    container_name: bybit_bot
+    depends_on:
+      - postgres_bybit
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bybit_user:bybit_secure_pass_2024@postgres_bybit:5432/bybit_trader
+      - BYBIT_API_KEY=${BYBIT_API_KEY}
+      - BYBIT_API_SECRET=${BYBIT_API_SECRET}
+      - BYBIT_TESTNET=${BYBIT_TESTNET}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    networks:
+      - bybit_network
+    restart: unless-stopped
+    command: python -u core/loop.py
+
+  sync:
+    build: .
+    container_name: bybit_sync
+    depends_on:
+      - postgres_bybit
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bybit_user:bybit_secure_pass_2024@postgres_bybit:5432/bybit_trader
+      - BYBIT_API_KEY=${BYBIT_API_KEY}
+      - BYBIT_API_SECRET=${BYBIT_API_SECRET}
+      - BYBIT_TESTNET=${BYBIT_TESTNET}
+      - BYBIT_BASE_URL=${BYBIT_BASE_URL}
+      - GOOGLE_API_KEY_1=${GOOGLE_API_KEY_1}
+      - GOOGLE_API_KEY_2=${GOOGLE_API_KEY_2}
+      - GOOGLE_API_KEY_3=${GOOGLE_API_KEY_3}
+    networks:
+      - bybit_network
+    restart: unless-stopped
+    command: python -u core/sync_positions.py
+
+  dashboard:
+    build: .
+    container_name: bybit_dashboard
+    depends_on:
+      - postgres_bybit
+    ports:
+      - "8585:5000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bybit_user:bybit_secure_pass_2024@postgres_bybit:5432/bybit_trader
+      - BYBIT_BASE_URL=${BYBIT_BASE_URL}
+      - BYBIT_API_KEY=${BYBIT_API_KEY}
+      - BYBIT_API_SECRET=${BYBIT_API_SECRET}
+      - BYBIT_TESTNET=${BYBIT_TESTNET}
+    networks:
+      - bybit_network
+    restart: unless-stopped
+    command: python web/app.py
+
+volumes:
+  bybit_db_data:
+
+networks:
+  bybit_network:
+    driver: bridge

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Bybit Торговый Бот</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%); color: #fff; padding: 20px; min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 30px; font-size: 2rem; }
+        .positive { color: #00ff88 !important; }
+        .negative { color: #ff4444 !important; }
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        .metric { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; text-align: center; }
+        .metric-label { font-size: 0.85rem; color: #888; margin-bottom: 8px; }
+        .metric-value { font-size: 1.6rem; font-weight: bold; }
+        .section { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .section h2 { margin-bottom: 15px; font-size: 1.2rem; color: #00ffff; }
+        .balances-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+        .balance-card { background: rgba(0,0,0,0.3); border-radius: 8px; padding: 15px; }
+        .balance-coin { font-weight: bold; color: #00ffff; margin-bottom: 8px; }
+        .balance-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 3px 0; }
+        .balance-label { color: #888; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        th { color: #00ffff; font-weight: 600; }
+        .logs { max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; }
+        .log-entry { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .log-INFO { color: #888; } .log-BUY, .log-TRADE { color: #00ff88; } .log-SELL { color: #ff8800; } .log-ERROR { color: #ff4444; }
+        .timestamp { text-align: center; color: #666; margin-top: 20px; font-size: 0.85rem; }
+        .error { color: #ff4444; padding: 20px; text-align: center; }
+        .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 15px; align-items: center; }
+        .pagination button { background: rgba(0,255,255,0.2); border: 1px solid #00ffff; color: #00ffff; padding: 8px 20px; border-radius: 5px; cursor: pointer; }
+        .pagination button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: #00ff88; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🤖 Bybit Торговый Бот</h1>
+    <div class="metrics">
+        <div class="metric"><div class="metric-label">💰 Текущий баланс</div><div class="metric-value" id="total-balance">-</div></div>
+        <div class="metric"><div class="metric-label">📊 Начальный баланс</div><div class="metric-value" id="initial-balance">-</div></div>
+        <div class="metric"><div class="metric-label">📈 Всего сделок</div><div class="metric-value" id="total-trades">0</div></div>
+        <div class="metric"><div class="metric-label">🎯 Винрейт</div><div class="metric-value" id="winrate">0%</div></div>
+        <div class="metric"><div class="metric-label">💵 Общий PnL</div><div class="metric-value" id="total-pnl">-</div></div>
+    </div>
+    <div class="section"><h2>💰 Балансы кошелька</h2><div class="balances-grid" id="balances-container">Загрузка...</div></div>
+    <div class="section">
+        <h2>📜 Последние закрытые сделки</h2>
+        <table><thead><tr><th>Пара</th><th>Тип</th><th>Вход</th><th>Выход</th><th>Кол-во</th><th>PnL</th><th>PnL %</th><th>Время закрытия</th></tr></thead>
+        <tbody id="trades-body"><tr><td colspan="8">Загрузка...</td></tr></tbody></table>
+        <div class="pagination"><button id="prev-btn" onclick="prevPage()" disabled>← Назад</button><span id="page-info">Стр. 1</span><button id="next-btn" onclick="nextPage()" disabled>Вперёд →</button></div>
+    </div>
+    <div class="section"><h2>📋 Системные логи</h2><div class="logs" id="logs-container">Загрузка...</div></div>
+    <div class="timestamp"><span class="status-dot"></span><span id="last-update">--</span></div>
+</div>
+<script>
+var allTrades = [];
+var currentPage = 1;
+var perPage = 10;
+
+function fmt(v, d) {
+    if (v === null || v === undefined || v === '' || isNaN(Number(v))) return '0.00';
+    return Number(v).toFixed(d !== undefined ? d : 2);
+}
+
+function safeStr(v, fb) {
+    return (v !== null && v !== undefined && v !== '') ? String(v) : (fb || 'Н/Д');
+}
+
+function adjustTime(timeStr) {
+    if (!timeStr || timeStr === 'Н/Д') return timeStr;
+    try {
+        var d = new Date(timeStr);
+        d.setHours(d.getHours() + 5); // +5 часов для РФ
+        return d.toLocaleString('ru-RU');
+    } catch(e) { return timeStr; }
+}
+
+function fetchData() {
+    fetch('/api/data')
+        .then(function(r) { if (!r.ok) throw new Error('Ошибка API ' + r.status); return r.json(); })
+        .then(function(d) { if (d.error) throw new Error(d.error); updateUI(d); })
+        .catch(function(e) { console.error(e); document.getElementById('balances-container').innerHTML = '<div class="error">' + e.message + '</div>'; });
+}
+
+function updateUI(d) {
+    var b = d.balance || {};
+    document.getElementById('total-balance').textContent = '$' + fmt(b.total_usdt);
+    document.getElementById('initial-balance').textContent = '$' + fmt(b.initial_balance);
+    var pnl = b.total_pnl || 0;
+    var pnlEl = document.getElementById('total-pnl');
+    pnlEl.textContent = '$' + fmt(pnl);
+    pnlEl.className = 'metric-value ' + (pnl >= 0 ? 'positive' : 'negative');
+
+    var st = d.stats || {};
+    document.getElementById('total-trades').textContent = st.total_trades || 0;
+    document.getElementById('winrate').textContent = fmt(st.winrate, 1) + '%';
+
+    var bals = b.balances || [];
+    if (bals.length > 0) {
+        var h = '';
+        for (var i = 0; i < bals.length; i++) {
+            var x = bals[i];
+            var ch = x.change_amount || 0;
+            h += '<div class="balance-card">';
+            h += '<div class="balance-coin">' + safeStr(x.coin) + '</div>';
+            h += '<div class="balance-row"><span class="balance-label">Кол-во:</span><span>' + fmt(x.total, 6) + '</span></div>';
+            h += '<div class="balance-row"><span class="balance-label">Цена:</span><span>$' + fmt(x.current_price, 4) + '</span></div>';
+            h += '<div class="balance-row"><span class="balance-label">Стоимость:</span><span>$' + fmt(x.usdt_value) + '</span></div>';
+            h += '<div class="balance-row"><span class="balance-label">Изменение:</span><span class="' + (ch >= 0 ? 'positive' : 'negative') + '">' + (ch >= 0 ? '+' : '') + fmt(ch, 6) + '</span></div>';
+            h += '</div>';
+        }
+        document.getElementById('balances-container').innerHTML = h;
+    } else {
+        document.getElementById('balances-container').innerHTML = '<div>Нет балансов</div>';
+    }
+
+    allTrades = d.closed_trades || [];
+    currentPage = 1;
+    renderTrades();
+
+    var logs = d.logs || [];
+    if (logs.length > 0) {
+        var lh = '';
+        for (var j = 0; j < Math.min(logs.length, 50); j++) {
+            var l = logs[j];
+            lh += '<div class="log-entry log-' + safeStr(l.level, 'INFO') + '">[' + safeStr(l.time, '--') + '] [' + safeStr(l.component, 'Система') + '] ' + safeStr(l.message, '') + '</div>';
+        }
+        document.getElementById('logs-container').innerHTML = lh;
+    } else {
+        document.getElementById('logs-container').innerHTML = '<div>Нет логов</div>';
+    }
+
+    document.getElementById('last-update').textContent = 'Обновлено: ' + adjustTime(d.timestamp);
+}
+
+function renderTrades() {
+    var totalPages = Math.max(1, Math.ceil(allTrades.length / perPage));
+    if (currentPage > totalPages) currentPage = totalPages;
+    var start = (currentPage - 1) * perPage;
+    var page = allTrades.slice(start, start + perPage);
+
+    var h = '';
+    if (page.length > 0) {
+        for (var i = 0; i < page.length; i++) {
+            var t = page[i];
+            var tpnl = t.pnl || 0;
+            var pc = tpnl >= 0 ? 'positive' : 'negative';
+            var sc = t.side === 'BUY' ? 'positive' : 'negative';
+            var sideRu = t.side === 'BUY' ? 'ПОКУПКА' : 'ПРОДАЖА';
+            h += '<tr>';
+            h += '<td>' + safeStr(t.symbol) + '</td>';
+            h += '<td class="' + sc + '">' + sideRu + '</td>';
+            h += '<td>$' + fmt(t.entry_price, 4) + '</td>';
+            h += '<td>$' + fmt(t.exit_price, 4) + '</td>';
+            h += '<td>' + fmt(t.quantity, 6) + '</td>';
+            h += '<td class="' + pc + '">$' + fmt(tpnl) + '</td>';
+            h += '<td class="' + pc + '">' + fmt(t.pnl_pct) + '%</td>';
+            h += '<td>' + adjustTime(t.exit_time) + '</td>';
+            h += '</tr>';
+        }
+    } else {
+        h = '<tr><td colspan="8">Нет сделок</td></tr>';
+    }
+    document.getElementById('trades-body').innerHTML = h;
+    document.getElementById('page-info').textContent = 'Стр. ' + currentPage + ' из ' + totalPages;
+    document.getElementById('prev-btn').disabled = currentPage <= 1;
+    document.getElementById('next-btn').disabled = currentPage >= totalPages;
+}
+
+function prevPage() { if (currentPage > 1) { currentPage--; renderTrades(); } }
+function nextPage() { var t = Math.ceil(allTrades.length / perPage); if (currentPage < t) { currentPage++; renderTrades(); } }
+
+fetchData();
+setInterval(fetchData, 5000);
+</script>
+</body>
+</html>
