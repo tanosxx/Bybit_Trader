@@ -161,16 +161,80 @@ async def get_stats():
         )
         open_trades = open_result.scalar() or 0
         
+        # ========== HYBRID STATS (раздельно по market_type) ==========
+        # SPOT stats
+        spot_total = await session.execute(
+            select(func.count(Trade.id)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'spot'
+            )
+        )
+        spot_wins = await session.execute(
+            select(func.count(Trade.id)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'spot',
+                Trade.pnl > 0
+            )
+        )
+        spot_pnl = await session.execute(
+            select(func.sum(Trade.pnl)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'spot'
+            )
+        )
+        
+        # FUTURES stats
+        futures_total = await session.execute(
+            select(func.count(Trade.id)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'futures'
+            )
+        )
+        futures_wins = await session.execute(
+            select(func.count(Trade.id)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'futures',
+                Trade.pnl > 0
+            )
+        )
+        futures_pnl = await session.execute(
+            select(func.sum(Trade.pnl)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'futures'
+            )
+        )
+        
+        spot_total_val = spot_total.scalar() or 0
+        spot_wins_val = spot_wins.scalar() or 0
+        spot_pnl_val = spot_pnl.scalar() or 0.0
+        
+        futures_total_val = futures_total.scalar() or 0
+        futures_wins_val = futures_wins.scalar() or 0
+        futures_pnl_val = futures_pnl.scalar() or 0.0
+        
         return {
             'total_trades': total_trades,
             'wins': wins,
             'losses': losses,
             'total_pnl': float(total_pnl),
             'winrate': (wins / total_trades * 100) if total_trades > 0 else 0,
-            'open_trades': open_trades
+            'open_trades': open_trades,
+            # Раздельная статистика
+            'spot': {
+                'total_trades': spot_total_val,
+                'wins': spot_wins_val,
+                'pnl': float(spot_pnl_val),
+                'winrate': (spot_wins_val / spot_total_val * 100) if spot_total_val > 0 else 0
+            },
+            'futures': {
+                'total_trades': futures_total_val,
+                'wins': futures_wins_val,
+                'pnl': float(futures_pnl_val),
+                'winrate': (futures_wins_val / futures_total_val * 100) if futures_total_val > 0 else 0
+            }
         }
 
-async def get_open_trades():
+async def get_open_trades(market_type=None):
     """Получить открытые сделки из БД"""
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
     from config import settings
@@ -179,9 +243,12 @@ async def get_open_trades():
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
     async with session_maker() as session:
-        result = await session.execute(
-            select(Trade).where(Trade.status == TradeStatus.OPEN).order_by(desc(Trade.entry_time))
-        )
+        query = select(Trade).where(Trade.status == TradeStatus.OPEN)
+        if market_type:
+            query = query.where(Trade.market_type == market_type)
+        query = query.order_by(desc(Trade.entry_time))
+        
+        result = await session.execute(query)
         trades = result.scalars().all()
         
         return [{
@@ -193,10 +260,11 @@ async def get_open_trades():
             'stop_loss': float(t.stop_loss) if t.stop_loss else None,
             'take_profit': float(t.take_profit) if t.take_profit else None,
             'entry_time': t.entry_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'cost': float(t.entry_price * t.quantity)
+            'cost': float(t.entry_price * t.quantity),
+            'market_type': t.market_type or 'spot'
         } for t in trades]
 
-async def get_recent_trades(limit=20):
+async def get_recent_trades(limit=20, market_type=None):
     """Получить последние закрытые сделки"""
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
     from config import settings
@@ -205,9 +273,12 @@ async def get_recent_trades(limit=20):
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
     async with session_maker() as session:
-        result = await session.execute(
-            select(Trade).where(Trade.status == TradeStatus.CLOSED).order_by(desc(Trade.exit_time)).limit(limit)
-        )
+        query = select(Trade).where(Trade.status == TradeStatus.CLOSED)
+        if market_type:
+            query = query.where(Trade.market_type == market_type)
+        query = query.order_by(desc(Trade.exit_time)).limit(limit)
+        
+        result = await session.execute(query)
         trades = result.scalars().all()
         
         return [{
@@ -220,7 +291,9 @@ async def get_recent_trades(limit=20):
             'pnl': float(t.pnl) if t.pnl else 0,
             'pnl_pct': float(t.pnl_pct) if t.pnl_pct else 0,
             'entry_time': t.entry_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'exit_time': t.exit_time.strftime('%Y-%m-%d %H:%M:%S') if t.exit_time else None
+            'exit_time': t.exit_time.strftime('%Y-%m-%d %H:%M:%S') if t.exit_time else None,
+            'market_type': t.market_type or 'spot',
+            'exit_reason': t.exit_reason
         } for t in trades]
 
 async def get_balance_history(days=7):
@@ -269,25 +342,152 @@ async def get_recent_logs(limit=50):
 
 @app.route('/')
 def index():
-    """Главная страница"""
+    """Главная страница - Hybrid Dashboard v3"""
+    return render_template('dashboard_v3.html')
+
+@app.route('/v2')
+def index_v2():
+    """Dashboard v2"""
+    return render_template('dashboard_v2.html')
+
+@app.route('/v1')
+def index_v1():
+    """Старый Dashboard v1"""
     return render_template('dashboard.html')
+
+async def get_futures_positions():
+    """Получить открытые фьючерсные позиции с Bybit API"""
+    try:
+        from core.bybit_api import BybitAPI
+        api = BybitAPI()
+        positions = await api.get_positions()
+        
+        result = []
+        for pos in positions:
+            size = float(pos.get('size', 0))
+            if size > 0:
+                # API возвращает entry_price (уже преобразовано в get_positions)
+                entry_price = float(pos.get('entry_price', 0))
+                side = pos.get('side', 'Buy')
+                leverage = pos.get('leverage', '1')
+                unrealized_pnl = float(pos.get('unrealized_pnl', 0))
+                symbol = pos.get('symbol', '')
+                
+                # Получаем текущую цену для mark_price
+                try:
+                    ticker = await api.get_ticker(symbol)
+                    if ticker:
+                        mark_price = float(ticker.get('lastPrice') or ticker.get('last_price', 0))
+                    else:
+                        mark_price = entry_price
+                except:
+                    mark_price = entry_price
+                
+                # Рассчитываем PnL %
+                if entry_price > 0:
+                    if side == 'Buy':
+                        pnl_pct = ((mark_price - entry_price) / entry_price * 100)
+                    else:  # Sell/Short
+                        pnl_pct = ((entry_price - mark_price) / entry_price * 100)
+                else:
+                    pnl_pct = 0
+                
+                result.append({
+                    'symbol': symbol,
+                    'side': 'LONG' if side == 'Buy' else 'SHORT',
+                    'size': size,
+                    'entry_price': entry_price,
+                    'mark_price': mark_price,
+                    'leverage': leverage,
+                    'unrealized_pnl': unrealized_pnl,
+                    'pnl_pct': pnl_pct
+                })
+        return result
+    except Exception as e:
+        print(f"❌ Error getting futures positions: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+async def get_futures_virtual_balance():
+    """Получить виртуальный баланс фьючерсов из БД (по закрытым сделкам)"""
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from config import settings
+    
+    engine = create_async_engine(settings.database_url, echo=False)
+    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    
+    initial_balance = settings.futures_virtual_balance  # $500
+    
+    async with session_maker() as session:
+        # Сумма PnL по закрытым фьючерсным сделкам
+        pnl_result = await session.execute(
+            select(func.sum(Trade.pnl)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'futures'
+            )
+        )
+        realized_pnl = pnl_result.scalar() or 0.0
+        
+        # Количество сделок
+        trades_result = await session.execute(
+            select(func.count(Trade.id)).where(
+                Trade.status == TradeStatus.CLOSED,
+                Trade.market_type == 'futures'
+            )
+        )
+        total_trades = trades_result.scalar() or 0
+        
+        # Открытые позиции
+        open_result = await session.execute(
+            select(func.count(Trade.id)).where(
+                Trade.status == TradeStatus.OPEN,
+                Trade.market_type == 'futures'
+            )
+        )
+        open_positions = open_result.scalar() or 0
+    
+    current_balance = initial_balance + realized_pnl
+    pnl_pct = (realized_pnl / initial_balance * 100) if initial_balance > 0 else 0
+    
+    return {
+        'initial_balance': initial_balance,
+        'current_balance': current_balance,
+        'realized_pnl': float(realized_pnl),
+        'pnl_pct': pnl_pct,
+        'total_trades': total_trades,
+        'open_positions': open_positions,
+        'leverage': settings.futures_leverage,
+        'risk_per_trade': settings.futures_risk_per_trade * 100
+    }
 
 @app.route('/api/data')
 def get_data():
     """API для получения всех данных"""
     try:
-        # Используем asyncio.run() вместо ручного управления loop
         async def fetch_all_data():
             balance_data = await get_real_balance()
             stats = await get_stats()
             closed_trades = await get_recent_trades()
+            open_trades = await get_open_trades()
             balance_history = await get_balance_history()
             logs = await get_recent_logs()
+            futures_positions = await get_futures_positions()
+            futures_balance = await get_futures_virtual_balance()
+            
+            # Раздельные сделки
+            spot_trades = await get_recent_trades(limit=20, market_type='spot')
+            futures_trades = await get_recent_trades(limit=20, market_type='futures')
             
             return {
                 'balance': balance_data,
                 'stats': stats,
                 'closed_trades': closed_trades,
+                'open_trades': open_trades,
+                'spot_trades': spot_trades,
+                'futures_trades': futures_trades,
+                'futures_positions': futures_positions,
+                'futures_balance': futures_balance,
                 'balance_history': balance_history,
                 'logs': logs,
                 'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')

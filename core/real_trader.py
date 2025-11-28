@@ -16,12 +16,30 @@ from core.ai_brain_local import get_local_brain  # Local Brain (автономн
 class RealTrader:
     """Реальный трейдер - открывает ордера на Bybit"""
     
+    # Правила округления для разных монет (Bybit требования)
+    QUANTITY_PRECISION = {
+        'BTCUSDT': 6,   # 0.000001
+        'ETHUSDT': 5,   # 0.00001
+        'BNBUSDT': 3,   # 0.001
+        'SOLUSDT': 2,   # 0.01
+        'XRPUSDT': 0,   # целые числа!
+        'DOGEUSDT': 0,  # целые числа
+        'ADAUSDT': 0,   # целые числа
+    }
+    
     def __init__(self):
         self.bybit_api = get_bybit_api()
         self.ml_predictor = get_ml_predictor()
         self.ai_brain = get_local_brain()  # Используем Local Brain (автономный)
         self.initial_balance = settings.initial_balance
         self.ml_enabled = False
+    
+    def round_quantity(self, symbol: str, quantity: float) -> float:
+        """Округлить количество согласно требованиям Bybit"""
+        precision = self.QUANTITY_PRECISION.get(symbol, 2)
+        if precision == 0:
+            return int(quantity)
+        return round(quantity, precision)
     
     async def get_balance(self) -> float:
         """Получить реальный баланс с Bybit"""
@@ -48,6 +66,8 @@ class RealTrader:
         quantity: float,
         ai_risk_score: int = 5,
         ai_reasoning: str = "",
+        stop_loss_override: float = None,
+        take_profit_override: float = None,
         extra_data: Dict = None
     ) -> Optional[Trade]:
         """
@@ -60,19 +80,28 @@ class RealTrader:
             quantity: количество
             ai_risk_score: оценка риска AI
             ai_reasoning: объяснение AI
+            stop_loss_override: Динамический SL (ATR-based)
+            take_profit_override: Динамический TP (ATR-based)
             extra_data: дополнительные данные
         
         Returns:
             Trade объект или None
         """
         try:
-            # Рассчитываем SL/TP
-            if side == TradeSide.BUY:
-                stop_loss = entry_price * (1 - settings.stop_loss_pct / 100)
-                take_profit = entry_price * (1 + settings.take_profit_pct / 100)
-            else:  # SELL (SHORT)
-                stop_loss = entry_price * (1 + settings.stop_loss_pct / 100)
-                take_profit = entry_price * (1 - settings.take_profit_pct / 100)
+            # Используем динамические SL/TP если переданы, иначе фиксированные
+            if stop_loss_override and take_profit_override:
+                stop_loss = stop_loss_override
+                take_profit = take_profit_override
+                print(f"   📊 Using DYNAMIC SL/TP (ATR-based)")
+            else:
+                # Fallback на фиксированные проценты
+                if side == TradeSide.BUY:
+                    stop_loss = entry_price * (1 - settings.stop_loss_pct / 100)
+                    take_profit = entry_price * (1 + settings.take_profit_pct / 100)
+                else:  # SELL (SHORT)
+                    stop_loss = entry_price * (1 + settings.stop_loss_pct / 100)
+                    take_profit = entry_price * (1 - settings.take_profit_pct / 100)
+                print(f"   📊 Using FIXED SL/TP ({settings.stop_loss_pct}%/{settings.take_profit_pct}%)")
             # 1. Открываем SPOT ордер на Bybit
             bybit_side = "Buy" if side == TradeSide.BUY else "Sell"
             
@@ -165,8 +194,12 @@ class RealTrader:
                 # Закрываем только в БД
                 return await self._close_in_db_only(trade, exit_price, reason + " (coins not found)")
             
-            # Используем реальное количество с баланса
-            real_quantity = balances[base_coin]['total']
+            # Используем реальное количество с баланса (с правильным округлением!)
+            real_quantity = self.round_quantity(trade.symbol, balances[base_coin]['total'])
+            
+            if real_quantity <= 0:
+                print(f"⚠️  Количество {base_coin} слишком мало после округления")
+                return await self._close_in_db_only(trade, exit_price, reason + " (qty too small)")
             
             # 2. Закрываем позицию на Bybit (продаем монеты)
             bybit_side = "Sell" if trade.side == TradeSide.BUY else "Buy"
@@ -175,7 +208,7 @@ class RealTrader:
                 symbol=trade.symbol,
                 side=bybit_side,
                 order_type="Market",
-                qty=real_quantity  # Используем реальное количество!
+                qty=real_quantity  # Используем округлённое количество!
             )
             
             if not order_result:

@@ -1,8 +1,9 @@
 """
-Конфигурация Bybit Trading Bot
+Конфигурация Bybit Trading Bot v2.0
+Гибридная система: SPOT + FUTURES
 """
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, Literal
 
 
 class Settings(BaseSettings):
@@ -34,13 +35,43 @@ class Settings(BaseSettings):
     cryptopanic_api_key_2: Optional[str] = None
     cryptopanic_api_key_3: Optional[str] = None
     
+    # ========== HYBRID TRADING MODE ==========
+    # Режим торговли: 'SPOT', 'FUTURES', 'HYBRID' (оба одновременно)
+    trading_mode: Literal['SPOT', 'FUTURES', 'HYBRID'] = 'HYBRID'
+    
+    # Включение/выключение рынков
+    spot_enabled: bool = True
+    futures_enabled: bool = True
+    
+    # ========== SPOT Settings ==========
+    spot_virtual_balance: float = 100.0  # Виртуальный лимит для SPOT
+    spot_risk_per_trade: float = 0.10  # 10% от баланса на сделку
+    
+    # ========== FUTURES Settings ==========
+    # КРИТИЧНО: Бот использует ТОЛЬКО этот баланс для расчёта позиций!
+    futures_virtual_balance: float = 500.0  # $500 виртуальный лимит (увеличено для min qty)
+    futures_leverage: int = 5  # Плечо (рекомендую 3-5x для начала)
+    futures_risk_per_trade: float = 0.10  # 10% от виртуального баланса
+    futures_margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'
+    
+    # Legacy (для совместимости)
+    leverage: int = 5
+    margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'
+    
     # Trading Settings
     initial_balance: float = 50.0
     scan_interval: int = 60  # секунд
     max_open_positions: int = 3
     max_daily_loss: float = 5.0  # $5
     
-    # Risk Management
+    # ========== МОДУЛЬ 2: Динамический Риск-менеджмент ==========
+    # ATR-based Risk Management
+    use_atr_stops: bool = True  # Использовать ATR для SL/TP
+    atr_period: int = 14  # Период ATR
+    atr_sl_multiplier: float = 2.0  # SL = Price ± (ATR * multiplier)
+    atr_tp_multiplier: float = 3.0  # TP = Price ± (ATR * multiplier)
+    
+    # Fallback фиксированные стопы (если ATR недоступен)
     max_position_size_pct: float = 20.0  # 20% от баланса
     stop_loss_pct: float = 2.0  # -2%
     take_profit_pct: float = 3.0  # +3%
@@ -49,12 +80,55 @@ class Settings(BaseSettings):
     # Trading Pairs
     trading_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
     
+    # Futures-specific pairs (linear USDT perpetuals)
+    # Добавлены BNB и XRP для большей активности
+    futures_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
 
 
 settings = Settings()
+
+
+# ========== Вспомогательные функции для Hybrid Trading ==========
+def is_hybrid_mode() -> bool:
+    """Проверить, включен ли гибридный режим"""
+    return settings.trading_mode == 'HYBRID'
+
+
+def is_spot_enabled() -> bool:
+    """Проверить, включен ли SPOT"""
+    return settings.spot_enabled and settings.trading_mode in ['SPOT', 'HYBRID']
+
+
+def is_futures_enabled() -> bool:
+    """Проверить, включены ли фьючерсы"""
+    return settings.futures_enabled and settings.trading_mode in ['FUTURES', 'HYBRID']
+
+
+def get_spot_pairs() -> list:
+    """Получить список SPOT пар"""
+    return settings.trading_pairs
+
+
+def get_futures_pairs() -> list:
+    """Получить список Futures пар"""
+    return settings.futures_pairs
+
+
+# Legacy functions (для совместимости)
+def is_futures_mode() -> bool:
+    return settings.trading_mode == 'FUTURES'
+
+
+def get_category() -> str:
+    return 'linear' if is_futures_mode() else 'spot'
+
+
+def get_trading_pairs() -> list:
+    return settings.futures_pairs if is_futures_mode() else settings.trading_pairs
 
 
 # AI Prompts для Gemini (специальный промпт чтобы не тупил!)

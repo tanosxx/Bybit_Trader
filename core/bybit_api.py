@@ -234,10 +234,13 @@ class BybitAPI:
         side: str,
         order_type: str,
         qty: float,
-        price: Optional[float] = None
+        price: Optional[float] = None,
+        category: str = "spot",
+        reduce_only: bool = False,
+        position_idx: int = 0
     ) -> Optional[Dict]:
         """
-        Разместить ордер
+        Разместить ордер (SPOT или FUTURES)
         
         Args:
             symbol: BTCUSDT
@@ -245,13 +248,16 @@ class BybitAPI:
             order_type: Market, Limit
             qty: количество
             price: цена (для Limit)
+            category: spot или linear (futures)
+            reduce_only: только закрытие (для futures)
+            position_idx: 0 = one-way mode (для futures)
         
         Returns:
             {"orderId": "...", "status": "..."}
         """
         endpoint = "/v5/order/create"
         params = {
-            "category": "spot",
+            "category": category,
             "symbol": symbol,
             "side": side,
             "orderType": order_type,
@@ -260,6 +266,12 @@ class BybitAPI:
         
         if order_type == "Limit" and price:
             params["price"] = str(price)
+        
+        # Futures-specific params
+        if category == "linear":
+            params["positionIdx"] = position_idx
+            if reduce_only:
+                params["reduceOnly"] = True
         
         response = await self._request("POST", endpoint, params)
         
@@ -603,6 +615,153 @@ class BybitAPI:
         
         print(f"✅ Total candles collected: {len(all_klines)}")
         return all_klines
+
+
+    # ========== FUTURES METHODS ==========
+    
+    async def set_leverage(self, symbol: str, leverage: int, category: str = "linear") -> Optional[Dict]:
+        """
+        Установить плечо для фьючерсной позиции
+        
+        Args:
+            symbol: BTCUSDT
+            leverage: 1-100
+            category: linear (USDT perpetual)
+        """
+        endpoint = "/v5/position/set-leverage"
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "buyLeverage": str(leverage),
+            "sellLeverage": str(leverage)
+        }
+        
+        response = await self._request("POST", endpoint, params)
+        
+        if response and response.get("retCode") in [0, 110043]:  # 110043 = already set
+            print(f"✅ Leverage set to {leverage}x for {symbol}")
+            return {"success": True, "leverage": leverage}
+        else:
+            print(f"⚠️ Set leverage response: {response}")
+            return None
+    
+    async def set_margin_mode(self, symbol: str, margin_mode: int, category: str = "linear") -> Optional[Dict]:
+        """
+        Установить режим маржи
+        
+        Args:
+            symbol: BTCUSDT
+            margin_mode: 0 = ISOLATED, 1 = CROSS
+            category: linear
+        """
+        endpoint = "/v5/position/switch-isolated"
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "tradeMode": margin_mode,
+            "buyLeverage": "5",
+            "sellLeverage": "5"
+        }
+        
+        response = await self._request("POST", endpoint, params)
+        
+        if response and response.get("retCode") in [0, 110026]:  # 110026 = already set
+            mode_name = "ISOLATED" if margin_mode == 0 else "CROSS"
+            print(f"✅ Margin mode set to {mode_name} for {symbol}")
+            return {"success": True, "mode": mode_name}
+        else:
+            print(f"⚠️ Set margin mode response: {response}")
+            return None
+    
+    async def get_positions(self, symbol: str = None, category: str = "linear") -> List[Dict]:
+        """
+        Получить открытые фьючерсные позиции
+        
+        Args:
+            symbol: BTCUSDT (опционально)
+            category: linear
+        
+        Returns:
+            List of positions
+        """
+        endpoint = "/v5/position/list"
+        params = {
+            "category": category,
+            "settleCoin": "USDT"
+        }
+        
+        if symbol:
+            params["symbol"] = symbol
+        
+        response = await self._request("GET", endpoint, params)
+        
+        if response and response.get("retCode") == 0:
+            positions = response["result"]["list"]
+            return [{
+                "symbol": p["symbol"],
+                "side": p["side"],
+                "size": float(p["size"]),
+                "entry_price": float(p["avgPrice"]) if p["avgPrice"] else 0,
+                "unrealized_pnl": float(p["unrealisedPnl"]) if p["unrealisedPnl"] else 0,
+                "leverage": p["leverage"],
+                "liq_price": float(p["liqPrice"]) if p["liqPrice"] else 0
+            } for p in positions if float(p["size"]) > 0]
+        else:
+            print(f"❌ Error getting positions: {response}")
+            return []
+    
+    async def place_futures_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        qty: float,
+        price: Optional[float] = None,
+        reduce_only: bool = False,
+        position_idx: int = 0
+    ) -> Optional[Dict]:
+        """
+        Разместить фьючерсный ордер
+        
+        Args:
+            symbol: BTCUSDT
+            side: Buy, Sell
+            order_type: Market, Limit
+            qty: количество
+            price: цена (для Limit)
+            reduce_only: только закрытие позиции
+            position_idx: 0 = one-way, 1 = buy side, 2 = sell side
+        
+        Returns:
+            {"orderId": "...", "status": "..."}
+        """
+        endpoint = "/v5/order/create"
+        params = {
+            "category": "linear",
+            "symbol": symbol,
+            "side": side,
+            "orderType": order_type,
+            "qty": str(qty),
+            "positionIdx": position_idx
+        }
+        
+        if order_type == "Limit" and price:
+            params["price"] = str(price)
+        
+        if reduce_only:
+            params["reduceOnly"] = True
+        
+        response = await self._request("POST", endpoint, params)
+        
+        if response and response.get("retCode") == 0:
+            result = response.get("result", {})
+            return {
+                "order_id": result.get("orderId", ""),
+                "status": result.get("orderStatus", "Unknown")
+            }
+        else:
+            print(f"❌ Error placing futures order: {response}")
+            return None
 
 
 # Singleton

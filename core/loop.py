@@ -14,6 +14,12 @@ from core.data_collector import get_data_collector
 from core.ml_predictor import get_ml_predictor  # LSTM модель
 from core.telegram_notifier import get_telegram_notifier
 from core.spot_position_manager import get_spot_position_manager  # SPOT менеджер
+from core.ta_lib import (  # DYNAMIC RISK MANAGEMENT 🎯
+    get_dynamic_risk_manager, 
+    get_portfolio_risk_manager,
+    RiskLevel
+)
+from core.multi_agent import get_meta_agent  # MULTI-AGENT SYSTEM 🤖
 from config import settings, STRATEGY_CONFIGS
 
 
@@ -30,8 +36,17 @@ class TradingLoop:
         self.telegram = get_telegram_notifier()
         self.spot_manager = get_spot_position_manager()  # SPOT менеджер
         
+        # DYNAMIC RISK MANAGEMENT 🎯
+        self.risk_manager = get_dynamic_risk_manager()
+        self.portfolio_manager = get_portfolio_risk_manager()
+        
+        # MULTI-AGENT SYSTEM 🤖
+        self.meta_agent = get_meta_agent()
+        self.use_multi_agent = True  # Включить/выключить Multi-Agent
+        
         self.running = False
         self.cycle_count = 0
+        self.daily_pnl = 0.0  # Отслеживаем дневной PnL
     
     async def log(self, level: LogLevel, message: str, extra_data: Dict = None):
         """Логирование в БД"""
@@ -125,10 +140,11 @@ class TradingLoop:
     
     async def execute_trade(self, analysis: Dict):
         """
-        Выполнить сделку на основе анализа
+        Выполнить сделку на основе анализа с DYNAMIC RISK MANAGEMENT
         """
         symbol = analysis['symbol']
         decision = analysis['final_decision']
+        klines = analysis.get('technical', {}).get('klines') or []
         
         if decision == "SKIP":
             return
@@ -144,12 +160,63 @@ class TradingLoop:
             await self.spot_manager.close_all_positions(self.telegram)
             return
         
-        # SPOT торговля - нет лимита на позиции
-        # Проверяем риск
-        ai_risk = analysis['ai']['risk_score']
-        ai_confidence = analysis['ai']['confidence']
+        # Получаем баланс и открытые позиции
+        balance = await self.trader.get_balance()
+        open_trades = await self.trader.get_open_trades()
+        stats = await self.trader.get_statistics()
         
-        # Получаем текущую стратегию (более агрессивная)
+        # ========== MARKET REGIME CHECK 📊 ==========
+        candles = await self.bybit_api.get_klines(symbol, "5", limit=100)  # 5-минутки для режима
+        if candles:
+            regime_check = self.risk_manager.get_trading_recommendation(candles)
+            print(f"\n   📊 MARKET REGIME: {regime_check['regime'].value}")
+            print(f"      Recommendation: {regime_check['recommendation'].value}")
+            print(f"      Reason: {regime_check['reason']}")
+            
+            if not regime_check['can_trade']:
+                print(f"   ⏭️ Skipping trade: {regime_check['reason']}")
+                return
+            
+            # Сохраняем множитель размера позиции
+            regime_size_multiplier = regime_check['size_multiplier']
+        else:
+            regime_size_multiplier = 1.0
+        
+        # ========== MULTI-AGENT DECISION 🤖 ==========
+        if self.use_multi_agent:
+            market_data = {
+                'symbol': symbol,
+                'price': analysis['technical']['price'],
+                'rsi': analysis['technical']['rsi'],
+                'macd': analysis['technical']['macd'],
+                'technical_signal': analysis['technical']['signal'],
+                'trend': analysis['technical']['trend']
+            }
+            
+            multi_decision = self.meta_agent.decide(market_data, analysis['ai'])
+            
+            print(f"\n   🤖 MULTI-AGENT DECISION:")
+            if multi_decision['selected_agent']:
+                print(f"      Selected: {multi_decision['selected_agent'].value}")
+            print(f"      Decision: {multi_decision['decision']}")
+            print(f"      Consensus: {'✅' if multi_decision['consensus'] else '❌'}")
+            print(f"      Confidence: {multi_decision['confidence']:.0%}")
+            
+            # Используем решение Multi-Agent
+            if multi_decision['decision'] == 'SKIP':
+                print(f"   ⏭️ Multi-Agent: SKIP")
+                return
+            
+            # Переопределяем параметры из Multi-Agent
+            ai_risk = multi_decision['risk_score']
+            ai_confidence = multi_decision['confidence']
+            position_size_from_agent = multi_decision['position_size_pct']
+        else:
+            # Старая логика без Multi-Agent
+            ai_risk = analysis['ai']['risk_score']
+            ai_confidence = analysis['ai']['confidence']
+            position_size_from_agent = None
+        
         strategy = STRATEGY_CONFIGS['aggressive']
         
         if ai_risk > strategy['max_risk']:
@@ -160,17 +227,6 @@ class TradingLoop:
             print(f"⚠️ Уверенность слишком низкая: {ai_confidence:.0%} < {strategy['min_confidence']:.0%}")
             return
         
-        # Рассчитываем размер позиции
-        balance = await self.trader.get_balance()
-        position_size_usd = balance * (strategy['position_size_pct'] / 100)
-        
-        # Применяем multiplier из Smart AI (Safety Mode = 0.5)
-        position_multiplier = analysis['ai'].get('position_size_multiplier', 1.0)
-        position_size_usd *= position_multiplier
-        
-        if position_multiplier < 1.0:
-            print(f"⚠️ Safety Mode: Position size reduced to {position_multiplier:.0%}")
-        
         # Получаем текущую цену
         ticker = await self.bybit_api.get_ticker(symbol)
         if not ticker:
@@ -178,15 +234,89 @@ class TradingLoop:
             return
         
         current_price = ticker['last_price']
-        quantity = position_size_usd / current_price
+        side_str = "BUY" if decision == "BUY" else "SELL"
         
-        # Округляем количество (для BTC - 4 знака, для ETH - 3 знака)
-        if symbol == "BTCUSDT":
-            quantity = round(quantity, 4)
+        # ========== DYNAMIC RISK MANAGEMENT 🎯 ==========
+        
+        # Получаем свечи для ATR расчёта
+        candles = await self.bybit_api.get_klines(symbol, "1", limit=200)
+        
+        # Определяем уровень риска по AI score
+        if ai_risk <= 3:
+            risk_level = RiskLevel.LOW
+        elif ai_risk <= 5:
+            risk_level = RiskLevel.MEDIUM
+        elif ai_risk <= 7:
+            risk_level = RiskLevel.HIGH
         else:
-            quantity = round(quantity, 3)
+            risk_level = RiskLevel.VERY_HIGH
         
-        # Открываем сделку
+        # Рассчитываем полные параметры риска
+        win_rate = stats['winrate'] / 100 if stats['total_trades'] > 10 else 0.55
+        risk_params = self.risk_manager.calculate_full_risk_params(
+            balance=balance,
+            entry_price=current_price,
+            side=side_str,
+            klines=candles,
+            risk_level=risk_level,
+            win_rate=win_rate
+        )
+        
+        print(f"\n   🎯 DYNAMIC RISK PARAMS:")
+        print(f"      ATR: ${risk_params.atr_value:.2f}")
+        print(f"      SL: ${risk_params.stop_loss_price:.2f} | TP: ${risk_params.take_profit_price:.2f}")
+        print(f"      R:R = 1:{risk_params.risk_reward_ratio:.1f}")
+        print(f"      Position: ${risk_params.position_size_usd:.2f} ({risk_params.position_size_qty:.6f})")
+        print(f"      Risk: ${risk_params.risk_amount_usd:.2f} ({risk_params.risk_percent:.1f}%)")
+        
+        # Проверяем портфельный риск
+        open_positions_data = [
+            {
+                'symbol': t.symbol,
+                'side': t.side.value,
+                'size_usd': t.entry_price * t.quantity,
+                'risk_amount': abs(t.entry_price - t.stop_loss) * t.quantity if t.stop_loss else 0
+            }
+            for t in open_trades
+        ]
+        
+        portfolio_check = self.portfolio_manager.full_risk_check(
+            balance=balance,
+            daily_pnl=self.daily_pnl,
+            open_positions=open_positions_data,
+            new_symbol=symbol,
+            new_position_risk=risk_params.risk_amount_usd
+        )
+        
+        if not portfolio_check['can_trade']:
+            print(f"   ❌ PORTFOLIO RISK CHECK FAILED:")
+            for reason in portfolio_check['reasons']:
+                print(f"      {reason}")
+            return
+        
+        print(f"   ✅ Portfolio Risk OK: {portfolio_check['portfolio_check']['new_portfolio_risk_pct']:.1f}%")
+        
+        # Применяем AI multiplier, Multi-Agent size и Market Regime multiplier
+        position_multiplier = analysis['ai'].get('position_size_multiplier', 1.0)
+        total_multiplier = position_multiplier * regime_size_multiplier
+        
+        if self.use_multi_agent and position_size_from_agent:
+            # Multi-Agent определяет размер позиции
+            final_position_usd = balance * position_size_from_agent * total_multiplier
+            print(f"   🤖 Multi-Agent position size: {position_size_from_agent*100:.0f}%")
+        else:
+            final_position_usd = risk_params.position_size_usd * total_multiplier
+        
+        if total_multiplier < 1.0:
+            print(f"   ⚠️ Size adjusted: {total_multiplier:.0%} (AI: {position_multiplier:.0%}, Regime: {regime_size_multiplier:.0%})")
+        
+        # Рассчитываем количество
+        quantity = final_position_usd / current_price
+        
+        # Округляем количество согласно требованиям Bybit
+        quantity = self.trader.round_quantity(symbol, quantity)
+        
+        # Открываем сделку с ДИНАМИЧЕСКИМИ SL/TP
         side = TradeSide.BUY if decision == "BUY" else TradeSide.SELL
         
         trade = await self.trader.open_trade(
@@ -196,21 +326,32 @@ class TradingLoop:
             quantity=quantity,
             ai_risk_score=ai_risk,
             ai_reasoning=analysis['ai']['reasoning'],
+            stop_loss_override=risk_params.stop_loss_price,  # DYNAMIC SL
+            take_profit_override=risk_params.take_profit_price,  # DYNAMIC TP
             extra_data={
-                "strategy": "balanced",
+                "strategy": "dynamic_risk",
                 "technical_signal": analysis['technical']['signal'],
                 "rsi": analysis['technical']['rsi'],
                 "macd_trend": analysis['technical']['macd']['trend'],
                 "bb_position": analysis['technical']['bollinger_bands']['position'],
-                "ml_prediction": analysis.get('ml_prediction')
+                "ml_prediction": analysis.get('ml_prediction'),
+                "atr": risk_params.atr_value,
+                "risk_reward": risk_params.risk_reward_ratio,
+                "risk_level": risk_level.value,
+                "trailing_stop_distance": risk_params.trailing_stop_distance
             }
         )
         
         if trade:
             await self.log(
                 LogLevel.BUY if side == TradeSide.BUY else LogLevel.SELL,
-                f"Opened {side.value} {symbol} @ ${current_price:.2f}",
-                {"trade_id": trade.id, "analysis": analysis}
+                f"Opened {side.value} {symbol} @ ${current_price:.2f} (ATR SL/TP)",
+                {"trade_id": trade.id, "risk_params": {
+                    "sl": risk_params.stop_loss_price,
+                    "tp": risk_params.take_profit_price,
+                    "rr": risk_params.risk_reward_ratio,
+                    "atr": risk_params.atr_value
+                }}
             )
             
             # Telegram уведомление
@@ -220,10 +361,10 @@ class TradingLoop:
                 "entry_price": current_price,
                 "quantity": quantity,
                 "cost": current_price * quantity,
-                "take_profit": trade.take_profit,
-                "stop_loss": trade.stop_loss,
+                "take_profit": risk_params.take_profit_price,
+                "stop_loss": risk_params.stop_loss_price,
                 "ai_risk": ai_risk,
-                "ai_reasoning": analysis['ai']['reasoning']
+                "ai_reasoning": f"{analysis['ai']['reasoning']} | R:R={risk_params.risk_reward_ratio:.1f}"
             })
     
     async def check_positions(self):
@@ -268,6 +409,10 @@ class TradingLoop:
             # 4. Статистика AI Brain
             print("\n" + "="*80)
             self.ai_brain.print_stats()
+            
+            # 5. Статистика Multi-Agent
+            if self.use_multi_agent:
+                self.meta_agent.print_stats()
             print("="*80)
             
             await self.log(LogLevel.INFO, f"Cycle #{self.cycle_count} completed")

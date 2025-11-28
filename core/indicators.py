@@ -222,5 +222,7 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['sma_50'] = calculate_sma(df['close'], 50)
     df['ema_12'] = calculate_ema(df['close'], 12)
     df['ema_26'] = calculate_ema(df['close'], 26)
+    df['ema_20'] = calculate_ema(df['close'], 20)
+    df['ema_50'] = calculate_ema(df['close'], 50)
     
     return df

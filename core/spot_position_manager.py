@@ -1,19 +1,25 @@
 """
 Менеджер SPOT позиций
 Отслеживает купленные монеты и автоматически продает при SL/TP
++ TRAILING STOP LOSS
 """
 from typing import Dict, List
 from database.db import async_session
 from database.models import Trade, TradeStatus, TradeSide
 from sqlalchemy import select
 from core.bybit_api import get_bybit_api
+from core.ta_lib import get_dynamic_risk_manager
 
 
 class SpotPositionManager:
-    """Управление SPOT позициями"""
+    """Управление SPOT позициями с Trailing Stop"""
     
     def __init__(self):
         self.bybit_api = get_bybit_api()
+        self.risk_manager = get_dynamic_risk_manager()
+        
+        # Кэш trailing stops (trade_id -> current_trailing_sl)
+        self._trailing_stops: Dict[int, float] = {}
     
     async def check_and_close_positions(self, telegram_notifier=None):
         """
@@ -67,21 +73,60 @@ class SpotPositionManager:
             
             current_price = float(price)
             
-            # Проверяем Stop Loss
-            if trade.side == TradeSide.BUY and current_price <= trade.stop_loss:
-                print(f"🛑 Stop Loss triggered for {trade.symbol}")
-                await self._close_spot_position(trade, current_price, "Stop Loss triggered", telegram_notifier)
+            # Используем trailing SL если есть, иначе обычный
+            effective_sl = self._trailing_stops.get(trade.id, trade.stop_loss)
+            
+            # Проверяем Stop Loss (с учётом trailing)
+            if trade.side == TradeSide.BUY and current_price <= effective_sl:
+                is_trailing = trade.id in self._trailing_stops and self._trailing_stops[trade.id] > trade.stop_loss
+                reason = "Trailing Stop triggered" if is_trailing else "Stop Loss triggered"
+                print(f"🛑 {reason} for {trade.symbol} @ ${effective_sl:.2f}")
+                await self._close_spot_position(trade, current_price, reason, telegram_notifier)
+                # Очищаем trailing stop из кэша
+                if trade.id in self._trailing_stops:
+                    del self._trailing_stops[trade.id]
             
             # Проверяем Take Profit
             elif trade.side == TradeSide.BUY and current_price >= trade.take_profit:
                 print(f"🎯 Take Profit reached for {trade.symbol}")
                 await self._close_spot_position(trade, current_price, "Take Profit reached", telegram_notifier)
+                if trade.id in self._trailing_stops:
+                    del self._trailing_stops[trade.id]
             
             else:
                 # Показываем текущий статус
                 pnl = (current_price - trade.entry_price) * trade.quantity
                 pnl_pct = (pnl / (trade.entry_price * trade.quantity)) * 100
-                print(f"   {trade.symbol}: ${current_price:.2f} | PnL: ${pnl:+.2f} ({pnl_pct:+.2f}%)")
+                
+                # ========== TRAILING STOP LOGIC ==========
+                # Получаем trailing distance из extra_data или используем дефолт
+                trailing_distance = None
+                if trade.extra_data and 'trailing_stop_distance' in trade.extra_data:
+                    trailing_distance = trade.extra_data['trailing_stop_distance']
+                
+                # Текущий trailing SL (из кэша или начальный)
+                current_trailing_sl = self._trailing_stops.get(trade.id, trade.stop_loss)
+                
+                # Проверяем нужно ли обновить trailing stop
+                if pnl > 0 and trailing_distance:  # Только в прибыли
+                    trailing_result = self.risk_manager.calculate_trailing_stop(
+                        entry_price=trade.entry_price,
+                        current_price=current_price,
+                        side=trade.side.value,
+                        initial_stop_loss=current_trailing_sl,
+                        trailing_percent=None,  # Используем ATR-based
+                        klines=None  # Используем trailing_distance напрямую
+                    )
+                    
+                    # Ручной расчёт если есть trailing_distance
+                    if trade.side == TradeSide.BUY:
+                        potential_new_sl = current_price - trailing_distance
+                        if potential_new_sl > current_trailing_sl:
+                            self._trailing_stops[trade.id] = potential_new_sl
+                            profit_locked = potential_new_sl - trade.entry_price
+                            print(f"   📈 {trade.symbol}: TRAILING SL updated to ${potential_new_sl:.2f} (locked: ${profit_locked:+.2f})")
+                
+                print(f"   {trade.symbol}: ${current_price:.2f} | PnL: ${pnl:+.2f} ({pnl_pct:+.2f}%) | SL: ${current_trailing_sl:.2f}")
     
     async def _close_spot_position(self, trade: Trade, exit_price: float, reason: str, telegram_notifier=None):
         """

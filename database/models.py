@@ -74,6 +74,7 @@ class Trade(Base):
     entry_time = Column(DateTime, default=datetime.utcnow, nullable=False)
     exit_price = Column(Float, nullable=True)
     exit_time = Column(DateTime, nullable=True)
+    exit_reason = Column(String(200), nullable=True)  # Причина закрытия
     status = Column(Enum(TradeStatus), default=TradeStatus.OPEN, nullable=False, index=True)
     pnl = Column(Float, default=0.0)
     pnl_pct = Column(Float, default=0.0)
@@ -83,15 +84,29 @@ class Trade(Base):
     take_profit = Column(Float, nullable=True)
     ai_risk_score = Column(Float, nullable=True)
     ai_reasoning = Column(Text, nullable=True)
-    extra_data = Column(JSON, nullable=True)  # agent_type, indicators, etc.
+    
+    # ========== HYBRID TRADING ==========
+    market_type = Column(String(20), default='spot', nullable=False, index=True)  # 'spot' или 'futures'
+    
+    extra_data = Column(JSON, nullable=True)  # agent_type, indicators, leverage, position_side, etc.
     
     def __repr__(self):
-        return f"<Trade {self.id} {self.side} {self.symbol} @ ${self.entry_price:.2f} [{self.status}]>"
+        return f"<Trade {self.id} [{self.market_type}] {self.side} {self.symbol} @ ${self.entry_price:.2f} [{self.status}]>"
     
     @property
     def total_cost(self):
         """Полная стоимость сделки"""
         return (self.entry_price * self.quantity) + self.fee_entry
+    
+    @property
+    def is_futures(self):
+        """Проверить, фьючерсная ли сделка"""
+        return self.market_type == 'futures'
+    
+    @property
+    def is_spot(self):
+        """Проверить, спотовая ли сделка"""
+        return self.market_type == 'spot'
 
 
 class Candle(Base):

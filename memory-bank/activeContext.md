@@ -4,7 +4,7 @@
 
 **Статус**: 🎮 **РАБОТАЕТ НА DEMO TRADING!**
 
-**Дата последнего обновления**: 26 ноября 2025, 11:40 UTC
+**Дата последнего обновления**: 28 ноября 2025, 22:40 UTC
 
 **Текущая фаза**: Реальная торговля на Demo балансе ($50,000)
 
@@ -125,27 +125,81 @@
 
 ## 🔄 Следующие шаги
 
-### Сегодня (27 ноября) - LOCAL CORE
+### Выполнено (27-28 ноября)
 1. ✅ **Local Core Architecture** - ГОТОВО!
-   - `news_brain.py` - CryptoPanic + VADER
-   - `ml_service.py` - joblib инференс
-   - `ai_brain_local.py` - Decision Tree
-   - Интеграция в loop.py
+2. ✅ **Dynamic Risk Management (ta_lib.py)** - ГОТОВО!
+3. ✅ **Backtesting Engine** - ГОТОВО!
+4. ✅ **Multi-Agent System** - ГОТОВО!
+5. ✅ **Dashboard V2** - ГОТОВО!
+6. ✅ **Деплой на сервер** - ГОТОВО!
+7. ✅ **Оптимизация параметров** - ГОТОВО!
+   - Добавлена стратегия momentum
+   - Улучшены фильтры сигналов
+   - Оптимизированы ATR multipliers
 
-2. ⏳ **Обучить ML модель в Google Colab**
-   - RandomForest или XGBoost
-   - Экспорт в `ml_data/trained_model.joblib`
-   - Фичи: RSI, MACD, BB, EMA, Volume
+### Сегодня (28 ноября) - МОНИТОРИНГ И ОПТИМИЗАЦИЯ
+1. ✅ **Бэктест запущен** - результаты получены
+   - 5-минутные свечи работают лучше 1-минутных
+   - mean_reversion показывает лучший результат
+   - Рынок боковой - все стратегии в минусе
 
-3. ⏳ **Деплой на сервер**
-   - Установить vaderSentiment, xgboost
-   - Загрузить trained_model.joblib
-   - Перезапустить контейнер
+2. ✅ **Market Regime Detection** - ГОТОВО!
+   - Определяет: TRENDING_UP, TRENDING_DOWN, RANGING, CHOPPY, HIGH/LOW_VOLATILITY
+   - Автоматически уменьшает размер позиции в неблагоприятных условиях
+   - Интегрировано в loop.py
 
-### Завтра (28 ноября)
-1. ⏳ **Тестирование Local Brain**
-2. ⏳ **Мониторинг решений**
-3. ⏳ **Оптимизация порогов confidence
+3. ✅ **Мониторинг реальной торговли**
+   - 802+ сделок выполнено
+   - Win Rate: 51.87%
+   - PnL: +$946.54
+   - Multi-Agent работает
+   - Portfolio Risk Check блокирует лишние сделки
+
+4. ✅ **Закрытие лишних позиций** - ГОТОВО!
+   - Создан скрипт `scripts/close_old_positions.py`
+   - Исправлено округление quantity для XRP (целые числа)
+   - Закрыто 32 позиции, осталось 3
+
+5. ✅ **HYBRID TRADING ARCHITECTURE** - ЗАВЕРШЕНО!
+   - `config.py` - HYBRID mode, виртуальные балансы
+   - `core/executors/` - BaseExecutor, SpotExecutor, FuturesExecutor
+   - `core/hybrid_loop.py` - параллельное исполнение SPOT + FUTURES
+   - Виртуальный баланс $500 для фьючерсов (безопасность!)
+   - Leverage 5x, Isolated margin
+   - LONG + SHORT позиции на фьючерсах
+   - ✅ Деплой на сервер - ГОТОВО!
+   - ✅ Бот переключен на hybrid_loop.py
+   - ✅ 2 фьючерсные позиции открыты
+
+6. 🎉 **HYBRID TRADING ЗАПУЩЕН!** (28 ноября 2025)
+   - Режим: HYBRID (SPOT + FUTURES одновременно)
+   - SPOT пары: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT
+   - FUTURES пары: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT
+   - Leverage: 5x, Isolated margin
+   - Virtual Balance: $500
+   - Multi-Agent + ML + News работают
+
+7. 🚀 **FUTURES BRAIN v2.0** (28 ноября 2025) ✅ РАБОТАЕТ!
+   - **Smart Scaling**: Raw 0.30-0.65 → Trading Conf 30-100%
+   - **Weighted Voting**: Score >= 3 для входа
+     - Conservative (вес 3): Conf > 75% + TA
+     - Balanced (вес 2): Conf > 55% + TA
+     - Aggressive (вес 1): Conf > 40%
+   - **Dynamic Leverage**: 2x/5x/7x по confidence
+   - **Smart Shorting**: News + TA → SHORT
+   - **Лимит потерь**: Max 2% от депозита на сделку
+   - Dashboard v3 с виртуальным балансом
+   - **Результат**: 4 SHORT позиции за 5 минут!
+
+8. 🚨 **АВАРИЙНОЕ ИСПРАВЛЕНИЕ FuturesExecutor v2.0** (28 ноября 2025)
+   - **ПРОБЛЕМА**: Позиции открылись в CROSS MARGIN без стопов!
+   - **PANIC CLOSE**: Все 5 позиций закрыты (PnL: -$4.42)
+   - **ИСПРАВЛЕНИЯ**:
+     - ✅ FORCE ISOLATED MARGIN - вызывается ПЕРЕД каждой сделкой
+     - ✅ PRICE PRECISION - tickSize из get_instruments_info
+     - ✅ VIRTUAL BALANCE ONLY - $100 фиксированный, НЕ запрашиваем с биржи
+     - ✅ ATOMIC SL/TP - стопы внутри place_order, не отдельно
+   - **Файл**: `core/executors/futures_executor.py` полностью переписан
 
 ## 🐛 Известные проблемы
 
