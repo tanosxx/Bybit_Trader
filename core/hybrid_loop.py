@@ -229,11 +229,17 @@ class HybridTradingLoop:
                     {"market_type": "spot", "order_id": result.order_id}
                 )
                 
-                # Telegram
-                await self.telegram.send_message(
-                    f"📈 [SPOT] {signal.action} {signal.symbol}\n"
-                    f"Price: ${signal.price:.2f}\n"
-                    f"Confidence: {signal.confidence:.0%}"
+                # Telegram - детальное уведомление
+                await self.telegram.notify_spot_opened(
+                    symbol=signal.symbol,
+                    side=signal.action,
+                    entry_price=signal.price,
+                    quantity=result.quantity,
+                    cost=signal.price * result.quantity,
+                    stop_loss=result.extra_data.get('stop_loss', 0),
+                    take_profit=result.extra_data.get('take_profit', 0),
+                    confidence=signal.confidence,
+                    reasoning=signal.reasoning
                 )
             
             return result
@@ -249,6 +255,8 @@ class HybridTradingLoop:
             if result.success:
                 side = result.extra_data.get('position_side', signal.action)
                 leverage = result.extra_data.get('leverage', settings.futures_leverage)
+                stop_loss = result.extra_data.get('stop_loss', 0)
+                take_profit = result.extra_data.get('take_profit', 0)
                 
                 await self.log(
                     LogLevel.BUY if signal.is_buy else LogLevel.SELL,
@@ -256,12 +264,18 @@ class HybridTradingLoop:
                     {"market_type": "futures", "order_id": result.order_id, "leverage": leverage}
                 )
                 
-                # Telegram
-                await self.telegram.send_message(
-                    f"📉 [FUTURES] {side} {signal.symbol}\n"
-                    f"Price: ${signal.price:.2f}\n"
-                    f"Leverage: {leverage}x\n"
-                    f"Confidence: {signal.confidence:.0%}"
+                # Telegram - детальное уведомление
+                await self.telegram.notify_futures_opened(
+                    symbol=signal.symbol,
+                    side=side,
+                    entry_price=signal.price,
+                    quantity=result.quantity,
+                    leverage=leverage,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    confidence=signal.confidence,
+                    reasoning=signal.reasoning,
+                    position_value=signal.price * result.quantity
                 )
             
             return result
@@ -329,16 +343,9 @@ class HybridTradingLoop:
             if self.safety_guardian:
                 guardian_result = await self.safety_guardian.audit_and_protect()
                 if guardian_result['closed']:
-                    # Отправляем алерт в Telegram
-                    closed_info = "\n".join([
-                        f"  • {c['symbol']} {c['side']}: ${c['pnl']:+.2f} ({', '.join(c['reasons'])})"
-                        for c in guardian_result['closed']
-                    ])
-                    await self.telegram.send_message(
-                        f"🚨 SAFETY GUARDIAN ALERT!\n"
-                        f"Closed {len(guardian_result['closed'])} dangerous positions:\n"
-                        f"{closed_info}\n"
-                        f"Total PnL: ${guardian_result['total_pnl']:+.2f}"
+                    await self.telegram.notify_safety_alert(
+                        closed_positions=guardian_result['closed'],
+                        total_pnl=guardian_result['total_pnl']
                     )
             
             # Проверяем позиции
@@ -388,11 +395,10 @@ class HybridTradingLoop:
         
         self.running = True
         
-        await self.telegram.send_message(
-            f"🚀 HYBRID BOT Started!\n"
-            f"Mode: {settings.trading_mode}\n"
-            f"SPOT: {'✅' if self.spot_executor else '❌'}\n"
-            f"FUTURES: {'✅' if self.futures_executor else '❌'}"
+        await self.telegram.notify_bot_started(
+            mode=settings.trading_mode,
+            spot_enabled=bool(self.spot_executor),
+            futures_enabled=bool(self.futures_executor)
         )
         
         await self.log(LogLevel.INFO, "Hybrid Bot started")
