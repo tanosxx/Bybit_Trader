@@ -10,7 +10,7 @@ from sqlalchemy import select, desc
 from config import settings
 from core.bybit_api import get_bybit_api
 from core.ml_predictor import get_ml_predictor
-from core.ai_brain_smart import get_smart_ai_brain  # Smart AI Brain (ML Gatekeeper)
+from core.ai_brain_local import get_local_brain  # Local Brain (автономный)
 
 
 class RealTrader:
@@ -19,7 +19,7 @@ class RealTrader:
     def __init__(self):
         self.bybit_api = get_bybit_api()
         self.ml_predictor = get_ml_predictor()
-        self.ai_brain = get_smart_ai_brain()  # Используем Smart AI (ML Gatekeeper)
+        self.ai_brain = get_local_brain()  # Используем Local Brain (автономный)
         self.initial_balance = settings.initial_balance
         self.ml_enabled = False
     

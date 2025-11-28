@@ -30,24 +30,43 @@ class NewsBrain:
     """
     
     def __init__(self):
-        # CryptoPanic API (бесплатный ключ)
-        self.api_key = getattr(settings, 'cryptopanic_api_key', None)
+        # CryptoPanic API - несколько ключей для ротации (100 req/month каждый)
+        self.api_keys = []
+        if getattr(settings, 'cryptopanic_api_key', None):
+            self.api_keys.append(settings.cryptopanic_api_key)
+        if getattr(settings, 'cryptopanic_api_key_2', None):
+            self.api_keys.append(settings.cryptopanic_api_key_2)
+        if getattr(settings, 'cryptopanic_api_key_3', None):
+            self.api_keys.append(settings.cryptopanic_api_key_3)
+        
+        self.current_key_index = 0
         self.base_url = "https://cryptopanic.com/api/v1/posts/"
+        self.coingecko_url = "https://api.coingecko.com/api/v3/search/trending"
         
         # VADER Sentiment Analyzer (легковесный, работает локально)
         self.sentiment_analyzer = SentimentIntensityAnalyzer()
         
-        # Кэш новостей (чтобы не спамить API)
+        # Кэш новостей (КРИТИЧНО: 100 req/month = ~3 req/day на ключ!)
         self._cache: Dict[str, Dict] = {}
-        self._cache_ttl = 300  # 5 минут
+        self._cache_ttl = 28800  # 8 часов (экономим запросы!)
         
         # Статистика
         self.stats = {
             'total_analyses': 0,
             'api_calls': 0,
             'cache_hits': 0,
-            'api_errors': 0
+            'api_errors': 0,
+            'key_rotations': 0
         }
+        
+        print(f"📰 NewsBrain initialized with {len(self.api_keys)} API key(s)")
+    
+    def _rotate_key(self):
+        """Ротация на следующий API ключ"""
+        if len(self.api_keys) > 1:
+            self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+            self.stats['key_rotations'] += 1
+            print(f"🔄 Rotated to CryptoPanic API key #{self.current_key_index + 1}")
     
     async def fetch_latest_news(
         self, 
@@ -64,9 +83,12 @@ class NewsBrain:
         Returns:
             Список новостей с заголовками
         """
-        if not self.api_key:
-            print("⚠️  CryptoPanic API key not configured, using fallback")
+        if not self.api_keys:
+            print("⚠️  CryptoPanic API keys not configured, using fallback")
             return []
+        
+        # Ротация ключей
+        api_key = self.api_keys[self.current_key_index]
         
         # Проверяем кэш
         cache_key = f"news_{'-'.join(currencies or ['all'])}_{hours_back}"
@@ -77,12 +99,12 @@ class NewsBrain:
                 return cached['data']
         
         try:
-            # Формируем URL
+            # Формируем URL (Developer plan: 24h delay, 100 req/mo)
             params = {
-                'auth_token': self.api_key,
+                'auth_token': api_key,
                 'public': 'true',
-                'kind': 'news',
-                'filter': 'hot'  # Только важные новости
+                'kind': 'news'
+                # Убрали filter - берём все новости для лучшего анализа
             }
             
             if currencies:
@@ -92,16 +114,24 @@ class NewsBrain:
                 async with session.get(
                     self.base_url,
                     params=params,
-                    timeout=aiohttp.ClientTimeout(total=10)
+                    timeout=aiohttp.ClientTimeout(total=30)  # Увеличен таймаут
                 ) as response:
+                    
+                    if response.status == 429:
+                        print(f"⚠️  CryptoPanic rate limit, rotating key...")
+                        self._rotate_key()
+                        self.stats['api_errors'] += 1
+                        return []
                     
                     if response.status != 200:
                         print(f"❌ CryptoPanic API error: {response.status}")
                         self.stats['api_errors'] += 1
+                        self._rotate_key()
                         return []
                     
                     data = await response.json()
                     self.stats['api_calls'] += 1
+                    print(f"✅ CryptoPanic: got {len(data.get('results', []))} news items")
             
             # Фильтруем по времени
             cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
@@ -134,12 +164,50 @@ class NewsBrain:
             return news
         
         except asyncio.TimeoutError:
-            print("❌ CryptoPanic API timeout")
+            print("❌ CryptoPanic API timeout, trying CoinGecko...")
             self.stats['api_errors'] += 1
-            return []
+            return await self._fetch_coingecko_fallback()
         except Exception as e:
-            print(f"❌ CryptoPanic API error: {e}")
+            print(f"❌ CryptoPanic API error: {e}, trying CoinGecko...")
             self.stats['api_errors'] += 1
+            return await self._fetch_coingecko_fallback()
+    
+    async def _fetch_coingecko_fallback(self) -> List[Dict]:
+        """Fallback на CoinGecko trending (бесплатно, без ключа)"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    self.coingecko_url,
+                    timeout=aiohttp.ClientTimeout(total=15)
+                ) as response:
+                    if response.status != 200:
+                        return []
+                    
+                    data = await response.json()
+                    coins = data.get('coins', [])
+                    
+                    # Конвертируем в формат новостей
+                    news = []
+                    for coin in coins[:10]:
+                        item = coin.get('item', {})
+                        name = item.get('name', '')
+                        symbol = item.get('symbol', '')
+                        score = item.get('score', 0)
+                        
+                        # Trending = позитивный сентимент
+                        news.append({
+                            'title': f"{name} ({symbol}) is trending on CoinGecko",
+                            'source': 'CoinGecko',
+                            'published_at': datetime.utcnow(),
+                            'votes': {'positive': score, 'negative': 0},
+                            'currencies': [symbol]
+                        })
+                    
+                    if news:
+                        print(f"✅ CoinGecko fallback: got {len(news)} trending coins")
+                    return news
+        except Exception as e:
+            print(f"❌ CoinGecko fallback error: {e}")
             return []
     
     def analyze_sentiment(self, text: str) -> Dict:
@@ -303,10 +371,12 @@ class NewsBrain:
     def print_stats(self):
         """Вывести статистику"""
         print(f"📰 News Brain Statistics:")
+        print(f"   API Keys: {len(self.api_keys)} (current: #{self.current_key_index + 1})")
         print(f"   Total Analyses: {self.stats['total_analyses']}")
         print(f"   API Calls: {self.stats['api_calls']}")
         print(f"   Cache Hits: {self.stats['cache_hits']}")
         print(f"   API Errors: {self.stats['api_errors']}")
+        print(f"   Key Rotations: {self.stats['key_rotations']}")
 
 
 # Singleton

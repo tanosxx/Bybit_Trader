@@ -14,7 +14,7 @@ from typing import Dict, Optional
 from enum import Enum
 
 from core.news_brain import get_news_brain, MarketSentiment
-from core.ml_service import get_ml_service
+from core.ml_predictor_v2 import get_ml_predictor_v2  # Используем существующую LSTM модель!
 
 
 class DecisionSource(Enum):
@@ -48,11 +48,13 @@ class LocalBrain:
     
     def __init__(self):
         self.news_brain = get_news_brain()
-        self.ml_service = get_ml_service()
+        self.ml_predictor = get_ml_predictor_v2()  # LSTM модель v2
+        self.ml_loaded = False
         
         # Конфигурация
         self.config = {
-            'min_ml_confidence': 0.75,      # Минимальная уверенность ML
+            'min_ml_confidence': 0.50,      # Минимальная уверенность ML (LSTM даёт 0.3-0.95)
+            'min_change_pct': 0.3,           # Минимальный % изменения для сигнала
             'news_weight': 0.3,              # Вес новостей в решении
             'ml_weight': 0.5,                # Вес ML в решении
             'ta_weight': 0.2,                # Вес TA в решении
@@ -150,19 +152,100 @@ class LocalBrain:
                 'recommendation': f'News API error: {e}'
             }
     
-    def _get_ml_signal(self, market_data: Dict) -> Dict:
+    async def _get_ml_signal(self, market_data: Dict) -> Dict:
         """
-        Шаг 2: Получить сигнал от ML модели
+        Шаг 2: Получить сигнал от LSTM модели v2
         
         Returns:
             {
                 'decision': 'BUY'/'SELL'/'HOLD',
                 'confidence': 0.0-1.0,
-                'signal': 1/-1/0,
-                'probabilities': {...}
+                'predicted_change_pct': float,
+                'direction': 'UP'/'DOWN'/'SKIP'
             }
         """
-        return self.ml_service.predict(market_data)
+        # Загружаем модель если ещё не загружена
+        if not self.ml_loaded:
+            self.ml_loaded = await self.ml_predictor.load_model()
+        
+        if not self.ml_loaded:
+            return {
+                'decision': 'HOLD',
+                'confidence': 0.0,
+                'predicted_change_pct': 0.0,
+                'direction': 'SKIP',
+                'error': 'ML model not loaded'
+            }
+        
+        # Получаем klines из market_data
+        klines = market_data.get('klines', [])
+        symbol = market_data.get('symbol', 'BTCUSDT')
+        current_price = market_data.get('price', 0)
+        
+        if not klines or len(klines) < 60:
+            return {
+                'decision': 'HOLD',
+                'confidence': 0.0,
+                'predicted_change_pct': 0.0,
+                'direction': 'SKIP',
+                'error': 'Not enough klines'
+            }
+        
+        # Предсказание LSTM
+        result = await self.ml_predictor.predict(symbol, current_price, klines)
+        
+        # Конвертируем direction в decision
+        direction = result.get('direction', 'SKIP')
+        confidence = result.get('confidence', 0.0)
+        change_pct = result.get('predicted_change_pct', 0.0)
+        
+        # Если ML не уверен - используем TA fallback
+        if direction == 'SKIP' or confidence < 0.4:
+            ta_signal = market_data.get('technical_signal', 'NEUTRAL')
+            rsi = market_data.get('rsi', 50)
+            macd = market_data.get('macd', {})
+            macd_trend = macd.get('trend', 'neutral')
+            
+            # Сильные RSI сигналы
+            if rsi < 25:  # Экстремально перепродан
+                direction = 'UP'
+                confidence = 0.75
+                change_pct = 1.5
+            elif rsi > 75:  # Экстремально перекуплен
+                direction = 'DOWN'
+                confidence = 0.75
+                change_pct = -1.5
+            elif rsi < 35:  # Перепродан - покупаем!
+                direction = 'UP'
+                confidence = 0.60
+                change_pct = 0.8
+            elif rsi > 65:  # Перекуплен - продаём!
+                direction = 'DOWN'
+                confidence = 0.60
+                change_pct = -0.8
+            elif rsi < 45 and macd_trend == 'bullish':
+                direction = 'UP'
+                confidence = 0.55
+                change_pct = 0.5
+            elif rsi > 55 and macd_trend == 'bearish':
+                direction = 'DOWN'
+                confidence = 0.55
+                change_pct = -0.5
+        
+        if direction == 'UP':
+            decision = 'BUY'
+        elif direction == 'DOWN':
+            decision = 'SELL'
+        else:
+            decision = 'HOLD'
+        
+        return {
+            'decision': decision,
+            'confidence': confidence,
+            'predicted_change_pct': change_pct,
+            'direction': direction,
+            'predicted_price': result.get('predicted_price', 0)
+        }
     
     def _check_ta_confirmation(self, ml_decision: str, market_data: Dict) -> Dict:
         """
@@ -313,12 +396,13 @@ class LocalBrain:
                 'ta_confirmation': None
             }
         
-        # ========== ШАГ 2: ML SIGNAL ==========
-        ml_result = self._get_ml_signal(market_data)
+        # ========== ШАГ 2: ML SIGNAL (LSTM v2) ==========
+        ml_result = await self._get_ml_signal(market_data)
         ml_decision = ml_result['decision']
         ml_confidence = ml_result['confidence']
         
-        print(f"   🤖 ML Signal: {ml_decision} (confidence: {ml_confidence:.0%})")
+        change_pct = ml_result.get('predicted_change_pct', 0)
+        print(f"   🤖 ML Signal: {ml_decision} (conf: {ml_confidence:.0%}, change: {change_pct:+.2f}%)")
         
         # Проверяем разрешения от новостей
         if ml_decision == 'BUY' and not news_data['allow_buy']:
@@ -432,7 +516,6 @@ class LocalBrain:
         
         # Статистика подмодулей
         self.news_brain.print_stats()
-        self.ml_service.print_stats()
 
 
 # Singleton

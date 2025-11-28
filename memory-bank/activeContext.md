@@ -11,13 +11,16 @@
 ## 🎯 Активная задача
 
 ### Что происходит сейчас?
-Bybit Trading Bot открывает РЕАЛЬНЫЕ ордера на Bybit Demo Trading!
+**LOCAL CORE ARCHITECTURE** - Полная автономность без внешних LLM API!
 
 **ТЕКУЩИЙ ФОКУС**: 
-- ✅ Первый SHORT BTC ордер открыт! (ID: 2092294999097216256)
-- ✅ Баланс: $50,000 (Demo)
-- ✅ API подключен к api-demo.bybit.com
-- ⏳ Мониторинг реальных сделок
+- ✅ Создан `core/news_brain.py` - Фундаментальный анализ (CryptoPanic + VADER)
+- ✅ Создан `core/ai_brain_local.py` - Автономный мозг (Decision Tree)
+- ✅ Интегрирован с существующим `ml_predictor_v2.py` (LSTM)
+- ✅ Интегрирован в `loop.py` и `real_trader.py`
+- ✅ Добавлен PANIC_SELL при EXTREME_FEAR
+- ✅ Ротация нескольких CryptoPanic API ключей (100 req/mo каждый)
+- ⏳ Деплой на сервер
 
 ### Последние изменения (26 ноября 2025)
 
@@ -122,26 +125,27 @@ Bybit Trading Bot открывает РЕАЛЬНЫЕ ордера на Bybit De
 
 ## 🔄 Следующие шаги
 
-### Сегодня (26 ноября) - МОНИТОРИНГ
-1. ⏳ **Исправить Gemini API**
-   - Найти правильное название модели
-   - Пока работает OpenRouter (Claude Haiku)
+### Сегодня (27 ноября) - LOCAL CORE
+1. ✅ **Local Core Architecture** - ГОТОВО!
+   - `news_brain.py` - CryptoPanic + VADER
+   - `ml_service.py` - joblib инференс
+   - `ai_brain_local.py` - Decision Tree
+   - Интеграция в loop.py
 
-2. ⏳ **Мониторинг первых циклов**
-   - Проверка логов
-   - Проверка Dashboard
-   - Ждем первые сделки
+2. ⏳ **Обучить ML модель в Google Colab**
+   - RandomForest или XGBoost
+   - Экспорт в `ml_data/trained_model.joblib`
+   - Фичи: RSI, MACD, BB, EMA, Volume
 
-### Завтра (27 ноября)
-1. ⏳ **Multi-Agent System** - переиспользовать из PolyAI_Simulator
-2. ⏳ **Position Sizer** - динамический размер позиций
-3. ⏳ **Risk Manager** - управление рисками
-4. ⏳ **Telegram Notifier** - уведомления
+3. ⏳ **Деплой на сервер**
+   - Установить vaderSentiment, xgboost
+   - Загрузить trained_model.joblib
+   - Перезапустить контейнер
 
-### Через 2-3 дня
-1. ⏳ **Тестирование на виртуальном балансе**
-2. ⏳ **Сбор статистики**
-3. ⏳ **Оптимизация параметров**
+### Завтра (28 ноября)
+1. ⏳ **Тестирование Local Brain**
+2. ⏳ **Мониторинг решений**
+3. ⏳ **Оптимизация порогов confidence
 
 ## 🐛 Известные проблемы
 

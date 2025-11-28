@@ -8,7 +8,7 @@ from database.db import init_db, async_session
 from database.models import SystemLog, LogLevel, TradeSide
 from core.bybit_api import get_bybit_api
 from core.technical_analyzer import get_technical_analyzer
-from core.ai_brain_smart import get_smart_ai_brain  # Smart AI Brain (ML Gatekeeper)
+from core.ai_brain_local import get_local_brain  # Local Brain (полностью автономный)
 from core.real_trader import get_real_trader  # РЕАЛЬНЫЙ ТРЕЙДЕР! 🚀
 from core.data_collector import get_data_collector
 from core.ml_predictor import get_ml_predictor  # LSTM модель
@@ -23,7 +23,7 @@ class TradingLoop:
     def __init__(self):
         self.bybit_api = get_bybit_api()
         self.technical_analyzer = get_technical_analyzer()
-        self.ai_brain = get_smart_ai_brain()  # Используем Smart AI (ML Gatekeeper)
+        self.ai_brain = get_local_brain()  # Используем Local Brain (автономный)
         self.trader = get_real_trader()  # РЕАЛЬНЫЙ ТРЕЙДЕР! 🚀
         self.data_collector = get_data_collector()
         self.ml_predictor = get_ml_predictor()  # LSTM модель
@@ -131,6 +131,17 @@ class TradingLoop:
         decision = analysis['final_decision']
         
         if decision == "SKIP":
+            return
+        
+        # PANIC_SELL - закрываем все позиции немедленно!
+        if decision == "PANIC_SELL":
+            print(f"🚨 PANIC SELL triggered! Closing all positions...")
+            await self.telegram.send_message(
+                f"🚨 PANIC SELL!\n"
+                f"Причина: {analysis['ai']['reasoning']}\n"
+                f"Закрываем все позиции!"
+            )
+            await self.spot_manager.close_all_positions(self.telegram)
             return
         
         # SPOT торговля - нет лимита на позиции

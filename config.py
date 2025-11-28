@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     
-    # News API (CryptoPanic)
+    # News API (CryptoPanic) - несколько ключей для ротации
     cryptopanic_api_key: Optional[str] = None
+    cryptopanic_api_key_2: Optional[str] = None
+    cryptopanic_api_key_3: Optional[str] = None
     
     # Trading Settings
     initial_balance: float = 50.0

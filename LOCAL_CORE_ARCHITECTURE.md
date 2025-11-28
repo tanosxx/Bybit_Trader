@@ -22,18 +22,22 @@
 | GREED | 0.2 to 0.5 | Разрешены лонги |
 | EXTREME_GREED | > 0.5 | Только лонги, размер x1.2 |
 
-### 2. `core/ml_service.py` - ML инференс
-- **Модель**: RandomForest/XGBoost (обучается в Colab)
-- **Файл**: `ml_data/trained_model.joblib`
-- **Функции**:
-  - `load_model()` - загрузка модели
-  - `predict()` - предсказание (BUY=1, SELL=-1, HOLD=0)
+### 2. `core/ml_predictor_v2.py` - LSTM модель (УЖЕ СУЩЕСТВУЕТ!)
+- **Модель**: LSTM (TensorFlow/Keras)
+- **Файлы**: 
+  - `ml_training/models/bybit_lstm_model_v2.h5`
+  - `ml_training/models/scaler_X_v2.pkl`
+  - `ml_training/models/scaler_y_v2.pkl`
+- **Предсказание**: % изменение цены за следующий час
 
-**Фичи модели**:
+**Фичи модели** (24 нормализованных):
 ```python
-['rsi', 'macd_value', 'macd_signal', 'macd_histogram',
- 'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
- 'ema_20', 'ema_50', 'volume_sma', 'price_change_pct', 'volatility']
+['open_norm', 'high_norm', 'low_norm', 'rsi_norm',
+ 'macd_norm', 'macd_signal_norm', 'macd_hist_norm',
+ 'bb_upper_norm', 'bb_lower_norm', 'bb_width',
+ 'sma20_norm', 'sma50_norm', 'ema12_norm', 'ema26_norm',
+ 'atr_norm', 'stoch_k_norm', 'stoch_d_norm', 'volume_log',
+ 'hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
 ```
 
 ### 3. `core/ai_brain_local.py` - Локальный мозг
@@ -70,22 +74,21 @@
 
 ### 1. Зависимости
 ```bash
-pip install vaderSentiment joblib xgboost
+pip install vaderSentiment
 ```
 
-### 2. CryptoPanic API Key
-1. Зарегистрируйся: https://cryptopanic.com/developers/api/
-2. Получи бесплатный ключ (100 запросов/час)
-3. Добавь в `.env`:
+### 2. CryptoPanic API Key (уже настроен!)
 ```
-CRYPTOPANIC_API_KEY=your_key_here
+CRYPTOPANIC_API_KEY=3e44ec47b8bdffdf84526285e2eb948c2537bdd4
 ```
+⚠️ Лимит: 100 req/month, кэш 8 часов
 
-### 3. ML модель
-Обучи модель в Google Colab и скопируй файлы:
+### 3. ML модель (УЖЕ РАБОТАЕТ!)
+LSTM модель уже обучена и загружена:
 ```
-ml_data/trained_model.joblib
-ml_data/trained_model_scaler.joblib  # опционально
+ml_training/models/bybit_lstm_model_v2.h5
+ml_training/models/scaler_X_v2.pkl
+ml_training/models/scaler_y_v2.pkl
 ```
 
 ## 🚀 Интеграция в loop.py

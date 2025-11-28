@@ -125,6 +125,53 @@ class SpotPositionManager:
         
         except Exception as e:
             print(f"❌ Error closing position in DB: {e}")
+    
+    async def close_all_positions(self, telegram_notifier=None):
+        """
+        PANIC SELL - закрыть ВСЕ открытые позиции немедленно!
+        Используется при EXTREME_FEAR новостном фоне
+        """
+        print(f"\n🚨 PANIC SELL - Closing ALL positions!")
+        
+        # Получаем все открытые позиции
+        async with async_session() as session:
+            result = await session.execute(
+                select(Trade).where(Trade.status == TradeStatus.OPEN)
+            )
+            open_trades = result.scalars().all()
+        
+        if not open_trades:
+            print(f"   No open positions to close")
+            return
+        
+        closed_count = 0
+        total_pnl = 0.0
+        
+        for trade in open_trades:
+            # Получаем текущую цену
+            ticker = await self.bybit_api.get_ticker(trade.symbol)
+            if not ticker:
+                continue
+            
+            price = ticker.get('lastPrice') or ticker.get('last_price') or ticker.get('price')
+            if not price:
+                continue
+            
+            current_price = float(price)
+            
+            # Закрываем позицию
+            result = await self._close_spot_position(
+                trade, 
+                current_price, 
+                "PANIC SELL - Extreme Fear detected",
+                telegram_notifier
+            )
+            
+            if result.get("success"):
+                closed_count += 1
+                total_pnl += result.get("pnl", 0)
+        
+        print(f"🚨 PANIC SELL complete: {closed_count} positions closed, Total PnL: ${total_pnl:+.2f}")
 
 
 
