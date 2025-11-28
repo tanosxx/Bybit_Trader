@@ -342,7 +342,17 @@ async def get_recent_logs(limit=50):
 
 @app.route('/')
 def index():
-    """Главная страница - Hybrid Dashboard v3"""
+    """Главная страница - FUTURES Dashboard"""
+    return render_template('dashboard_futures.html')
+
+@app.route('/futures')
+def futures_dashboard():
+    """FUTURES Dashboard"""
+    return render_template('dashboard_futures.html')
+
+@app.route('/hybrid')
+def hybrid_dashboard():
+    """Hybrid Dashboard v3"""
     return render_template('dashboard_v3.html')
 
 @app.route('/v2')
