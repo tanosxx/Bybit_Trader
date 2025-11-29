@@ -103,6 +103,24 @@
 
 ## ⏳ В процессе
 
+### Фаза 15: FUTURES EXECUTOR v5.0 (29 ноября 2025) ✅ ЗАВЕРШЕНО
+- [x] Лимит открытых позиций: max 3
+- [x] Минимальный confidence: 60%
+- [x] Ручная проверка SL/TP каждый цикл (не полагаемся на биржу)
+- [x] Config: futures_max_open_positions, futures_min_confidence
+- [x] Метод check_and_close_sl_tp() в FuturesExecutor
+- [x] Интеграция в hybrid_loop
+- [x] Деплой на сервер ✅
+
+### Фаза 14: FUTURES EXECUTOR v4.0 (29 ноября 2025) ✅ ЗАВЕРШЕНО
+- [x] Native Trailing Stop - серверный трейлинг через Bybit API
+- [x] Funding Rate Filter - проверка ставки перед входом
+- [x] Config: trailing_stop_enabled, trailing_activation_pct, trailing_callback_pct
+- [x] Config: funding_rate_filter_enabled, funding_rate_max_pct, funding_time_window_minutes
+- [x] Логика: блокировка LONG при высоком положительном funding
+- [x] Логика: блокировка SHORT при высоком отрицательном funding
+- [x] Деплой на сервер ✅
+
 ### Фаза 13: HYBRID TRADING (28 ноября 2025) ✅ ЗАВЕРШЕНО
 - [x] Config.py - HYBRID mode, виртуальные балансы
 - [x] BaseExecutor - абстрактный класс

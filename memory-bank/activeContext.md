@@ -179,7 +179,17 @@
    - Virtual Balance: $500
    - Multi-Agent + ML + News работают
 
-7. 🚀 **FUTURES BRAIN v2.0** (28 ноября 2025) ✅ РАБОТАЕТ!
+7. 🚀 **FUTURES EXECUTOR v4.0** (29 ноября 2025) ✅ РАБОТАЕТ!
+   - **Native Trailing Stop**: Серверный трейлинг через Bybit API
+     - Активация: +1.0% профита
+     - Callback: 0.5% от пика
+   - **Funding Rate Filter**: Защита от скрытых комиссий
+     - Блокирует LONG при высоком положительном funding (> 0.05%)
+     - Блокирует SHORT при высоком отрицательном funding
+     - Окно проверки: 60 минут до выплаты
+   - Деплой на сервер ✅
+
+8. 🚀 **FUTURES BRAIN v2.0** (28 ноября 2025) ✅ РАБОТАЕТ!
    - **Smart Scaling**: Raw 0.30-0.65 → Trading Conf 30-100%
    - **Weighted Voting**: Score >= 3 для входа
      - Conservative (вес 3): Conf > 75% + TA

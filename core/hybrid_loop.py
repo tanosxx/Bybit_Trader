@@ -263,20 +263,7 @@ class HybridTradingLoop:
                     f"[FUTURES] {side} {signal.symbol} @ ${signal.price:.2f} ({leverage}x)",
                     {"market_type": "futures", "order_id": result.order_id, "leverage": leverage}
                 )
-                
-                # Telegram - детальное уведомление
-                await self.telegram.notify_futures_opened(
-                    symbol=signal.symbol,
-                    side=side,
-                    entry_price=signal.price,
-                    quantity=result.quantity,
-                    leverage=leverage,
-                    stop_loss=stop_loss,
-                    take_profit=take_profit,
-                    confidence=signal.confidence,
-                    reasoning=signal.reasoning,
-                    position_value=signal.price * result.quantity
-                )
+                # Telegram уведомление отправляется из FuturesExecutor
             
             return result
         except Exception as e:
@@ -347,6 +334,13 @@ class HybridTradingLoop:
                         closed_positions=guardian_result['closed'],
                         total_pnl=guardian_result['total_pnl']
                     )
+            
+            # 🎯 v5.0: РУЧНАЯ ПРОВЕРКА SL/TP для фьючерсов
+            if self.futures_executor:
+                closed_by_sltp = await self.futures_executor.check_and_close_sl_tp()
+                if closed_by_sltp:
+                    for pos in closed_by_sltp:
+                        print(f"   🎯 Closed {pos['symbol']} {pos['side']}: {pos['reason']} | PnL: ${pos['pnl']:+.2f}")
             
             # Проверяем позиции
             await self.check_positions()

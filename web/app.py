@@ -276,6 +276,15 @@ async def get_recent_trades(limit=20, market_type=None):
         query = select(Trade).where(Trade.status == TradeStatus.CLOSED)
         if market_type:
             query = query.where(Trade.market_type == market_type)
+            # Для futures исключаем старые SPOT записи с ошибками
+            if market_type == 'futures':
+                from sqlalchemy import or_
+                query = query.where(
+                    or_(
+                        Trade.exit_reason.is_(None),
+                        ~Trade.exit_reason.like('%Coins not found%')
+                    )
+                )
         query = query.order_by(desc(Trade.exit_time)).limit(limit)
         
         result = await session.execute(query)

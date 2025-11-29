@@ -1,326 +1,361 @@
 """
-Telegram уведомления для Bybit Trading Bot v2.0
-Чёткие и информативные оповещения
+Telegram Reporter v2.0 - Rich Formatting для Futures Trading
+Красивые, компактные и информативные уведомления
+
+ТОЛЬКО FUTURES! SPOT уведомления отключены.
 """
 import asyncio
 from typing import Optional, Dict
-from datetime import datetime
-from telegram import Bot
-from telegram.error import TelegramError
+from datetime import datetime, timezone
 from config import settings
 
 
-class TelegramNotifier:
-    """Отправка уведомлений в Telegram"""
+class TelegramReporter:
+    """
+    Rich Telegram уведомления для Futures Trading
+    
+    Типы сообщений:
+    - OPEN: Открытие позиции (LONG/SHORT)
+    - CLOSE: Закрытие (TP/SL/Trailing)
+    - INFO: Funding skip, Safety alerts
+    """
     
     def __init__(self):
         self.bot_token = settings.telegram_bot_token
         self.chat_id = settings.telegram_chat_id
         self.bot = None
+        self.enabled = False
         
         if self.bot_token and self.chat_id:
-            self.bot = Bot(token=self.bot_token)
-            self.enabled = True
+            try:
+                from telegram import Bot
+                self.bot = Bot(token=self.bot_token)
+                self.enabled = True
+                print(f"📱 TelegramReporter v2.0: ENABLED")
+            except Exception as e:
+                print(f"📱 TelegramReporter: DISABLED ({e})")
         else:
-            self.enabled = False
+            print(f"📱 TelegramReporter: DISABLED (no credentials)")
     
-    async def send_message(self, message: str, parse_mode: str = "HTML"):
-        """Отправить сообщение"""
-        if not self.enabled:
-            return
+    async def send_message(self, message: str, parse_mode: str = "HTML") -> bool:
+        """
+        Отправить сообщение с обработкой ошибок
+        
+        Returns: True если успешно
+        """
+        if not self.enabled or not self.bot:
+            return False
         
         try:
             await self.bot.send_message(
                 chat_id=self.chat_id,
                 text=message,
-                parse_mode=parse_mode
+                parse_mode=parse_mode,
+                disable_web_page_preview=True
             )
-        except TelegramError as e:
-            print(f"❌ Telegram error: {e}")
+            return True
+        except Exception as e:
+            # НЕ падаем! Просто логируем
+            print(f"📱 Telegram error (ignored): {e}")
+            return False
     
-    # ========== FUTURES NOTIFICATIONS ==========
+    # ========== FUTURES ONLY ==========
     
-    async def notify_futures_opened(
+    def _check_futures_only(self, market_type: str) -> bool:
+        """Фильтр: только FUTURES"""
+        if market_type and market_type.lower() == 'spot':
+            return False  # SPOT отключен
+        return True
+
+    
+    # ========== ТИП А: ОТКРЫТИЕ ПОЗИЦИИ ==========
+    
+    async def notify_open(
         self,
         symbol: str,
         side: str,  # LONG / SHORT
         entry_price: float,
-        quantity: float,
+        size_usd: float,
         leverage: int,
         stop_loss: float,
         take_profit: float,
-        confidence: float,
-        reasoning: str,
-        position_value: float = None
+        reason: str = "",
+        market_type: str = "futures"
     ):
         """
-        Уведомление об открытии FUTURES позиции
+        🚀 OPEN LONG / 🐻 OPEN SHORT
+        
+        Компактное уведомление об открытии позиции
         """
-        emoji = "🟢" if side == "LONG" else "🔴"
-        direction = "�  LONG (покупка)" if side == "LONG" else "📉 SHORT (продажа)"
+        if not self._check_futures_only(market_type):
+            return
         
-        # Рассчитываем стоимость если не передана
-        if position_value is None:
-            position_value = entry_price * quantity
+        # Заголовок
+        if side.upper() in ["LONG", "BUY"]:
+            header = "🚀 <b>OPEN LONG</b>"
+        else:
+            header = "🐻 <b>OPEN SHORT</b>"
         
-        # Рассчитываем потенциал
-        if side == "LONG":
+        # Рассчитываем % до SL/TP
+        if side.upper() in ["LONG", "BUY"]:
             sl_pct = ((stop_loss - entry_price) / entry_price) * 100
             tp_pct = ((take_profit - entry_price) / entry_price) * 100
         else:
             sl_pct = ((entry_price - stop_loss) / entry_price) * 100
             tp_pct = ((entry_price - take_profit) / entry_price) * 100
         
-        message = f"""
-{emoji} <b>FUTURES ОТКРЫТА</b>
+        # Сокращаем reason
+        short_reason = reason[:80] if reason else "Signal confirmed"
+        
+        message = f"""{header}
 
-💱 <b>{symbol}</b>
-{direction}
-
-� <b>>Детали сделки:</b>
-├ Цена входа: <b>${entry_price:,.2f}</b>
-├ Количество: <b>{quantity}</b>
-├ Плечо: <b>{leverage}x</b>
-└ Стоимость: <b>${position_value:,.2f}</b>
-
-�️ <b>Зыащита:</b>
-├ Stop Loss: <b>${stop_loss:,.2f}</b> ({sl_pct:+.1f}%)
-└ Take Profit: <b>${take_profit:,.2f}</b> ({tp_pct:+.1f}%)
-
-🎯 Уверенность: <b>{confidence:.0%}</b>
-� Пригчина: {reasoning[:150]}
-
-⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC
-"""
+<b>#{symbol}</b>
+💵 <b>Size:</b> ${size_usd:.2f} (Lev: {leverage}x Isolated)
+🏁 <b>Entry:</b> ${entry_price:,.2f}
+🛡️ <b>SL:</b> ${stop_loss:,.2f} ({sl_pct:+.1f}%) | 🎯 <b>TP:</b> ${take_profit:,.2f} ({tp_pct:+.1f}%)
+🧠 <b>Why:</b> {short_reason}"""
+        
         await self.send_message(message)
     
-    async def notify_futures_closed(
+    # ========== ТИП Б: ЗАКРЫТИЕ ПОЗИЦИИ ==========
+    
+    async def notify_close(
         self,
         symbol: str,
         side: str,
-        entry_price: float,
         exit_price: float,
-        quantity: float,
-        leverage: int,
         pnl: float,
         pnl_pct: float,
-        reason: str,
-        duration: str = None
+        duration_minutes: int = 0,
+        reason: str = "",
+        market_type: str = "futures"
     ):
         """
-        Уведомление о закрытии FUTURES позиции
-        """
-        emoji = "✅" if pnl > 0 else "❌"
-        result = "ПРИБЫЛЬ" if pnl > 0 else "УБЫТОК"
+        💰 TAKE PROFIT / 🩸 STOP LOSS
         
-        message = f"""
-{emoji} <b>FUTURES ЗАКРЫТА</b>
+        Компактное уведомление о закрытии
+        """
+        if not self._check_futures_only(market_type):
+            return
+        
+        # Заголовок по результату
+        if pnl >= 0:
+            header = "💰 <b>TAKE PROFIT</b>"
+            pnl_emoji = "📈"
+        else:
+            header = "🩸 <b>STOP LOSS</b>"
+            pnl_emoji = "📉"
+        
+        # Форматируем время
+        if duration_minutes > 60:
+            duration_str = f"{duration_minutes // 60}h {duration_minutes % 60}m"
+        else:
+            duration_str = f"{duration_minutes}m"
+        
+        message = f"""{header}
 
-� <b>{symbol}</b> ({side})
-
-💰 <b>Результат:</b>
-├ Вход: <b>${entry_price:,.2f}</b>
-├ Выход: <b>${exit_price:,.2f}</b>
-├ Плечо: <b>{leverage}x</b>
-└ <b>{result}: ${pnl:+.2f}</b> ({pnl_pct:+.1f}%)
-
-📝 Причина: {reason}
-{f"⏱ Время в позиции: {duration}" if duration else ""}
-
-⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC
-"""
+<b>#{symbol}</b> ({side})
+{pnl_emoji} <b>Exit:</b> ${exit_price:,.2f}
+💸 <b>PnL:</b> ${pnl:+.2f} ({pnl_pct:+.1f}%)
+⏱️ <b>Duration:</b> {duration_str}"""
+        
+        if reason:
+            message += f"\n📝 {reason}"
+        
         await self.send_message(message)
     
-    # ========== SPOT NOTIFICATIONS ==========
+    # ========== ТИП В: TRAILING STOP ==========
     
-    async def notify_spot_opened(
-        self,
-        symbol: str,
-        side: str,  # BUY / SELL
-        entry_price: float,
-        quantity: float,
-        cost: float,
-        stop_loss: float,
-        take_profit: float,
-        confidence: float,
-        reasoning: str
-    ):
-        """
-        Уведомление об открытии SPOT позиции
-        """
-        emoji = "🟢" if side == "BUY" else "🔴"
-        
-        message = f"""
-{emoji} <b>SPOT ОТКРЫТА</b>
-
-💱 <b>{symbol}</b>
-📊 Действие: <b>{side}</b>
-
-💰 <b>Детали:</b>
-├ Цена: <b>${entry_price:,.2f}</b>
-├ Количество: <b>{quantity}</b>
-└ Стоимость: <b>${cost:,.2f}</b>
-
-🛡️ <b>Защита:</b>
-├ Stop Loss: <b>${stop_loss:,.2f}</b>
-└ Take Profit: <b>${take_profit:,.2f}</b>
-
-🎯 Уверенность: <b>{confidence:.0%}</b>
-💡 Причина: {reasoning[:150]}
-
-⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC
-"""
-        await self.send_message(message)
-    
-    async def notify_spot_closed(
+    async def notify_trailing_hit(
         self,
         symbol: str,
         side: str,
-        entry_price: float,
-        exit_price: float,
-        quantity: float,
+        secured_pct: float,
         pnl: float,
-        pnl_pct: float,
-        reason: str
+        market_type: str = "futures"
     ):
         """
-        Уведомление о закрытии SPOT позиции
+        ⚡ Trailing Stop Hit
         """
-        emoji = "✅" if pnl > 0 else "❌"
-        result = "ПРИБЫЛЬ" if pnl > 0 else "УБЫТОК"
+        if not self._check_futures_only(market_type):
+            return
         
-        message = f"""
-{emoji} <b>SPOT ЗАКРЫТА</b>
+        message = f"""⚡ <b>TRAILING STOP HIT</b>
 
-💱 <b>{symbol}</b>
-
-💰 <b>Результат:</b>
-├ Вход: <b>${entry_price:,.2f}</b>
-├ Выход: <b>${exit_price:,.2f}</b>
-└ <b>{result}: ${pnl:+.2f}</b> ({pnl_pct:+.1f}%)
-
-📝 Причина: {reason}
-
-⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC
-"""
+<b>#{symbol}</b> ({side})
+🔒 Secured Profit: <b>+{secured_pct:.1f}%</b> (${pnl:+.2f})"""
+        
         await self.send_message(message)
+    
+    # ========== ТИП Г: FUNDING SKIP ==========
+    
+    async def notify_funding_skip(
+        self,
+        symbol: str,
+        side: str,
+        funding_rate: float,
+        minutes_until: int
+    ):
+        """
+        ⚠️ High Funding Skip
+        """
+        message = f"""⚠️ <b>HIGH FUNDING SKIP</b>
+
+<b>#{symbol}</b> ({side})
+💸 Rate: <b>{funding_rate:.4f}%</b>
+⏰ Payment in: {minutes_until} min
+
+<i>Trade blocked to avoid fee</i>"""
+        
+        await self.send_message(message)
+
     
     # ========== SAFETY ALERTS ==========
     
-    async def notify_safety_alert(
+    async def notify_safety_close(
         self,
-        closed_positions: list,
-        total_pnl: float
+        symbol: str,
+        side: str,
+        pnl: float,
+        reasons: list
     ):
         """
-        Уведомление от SafetyGuardian
+        🚨 Safety Guardian закрыл позицию
         """
-        positions_info = "\n".join([
-            f"├ {p['symbol']} {p['side']}: <b>${p['pnl']:+.2f}</b> ({', '.join(p['reasons'])})"
-            for p in closed_positions
-        ])
+        reasons_str = ", ".join(reasons) if reasons else "Risk limit"
         
-        message = f"""
-🚨 <b>SAFETY GUARDIAN</b>
+        message = f"""🚨 <b>SAFETY CLOSE</b>
 
-⚠️ Закрыты опасные позиции:
-{positions_info}
-
-💰 Итого PnL: <b>${total_pnl:+.2f}</b>
-
-⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC
-"""
+<b>#{symbol}</b> ({side})
+💸 PnL: ${pnl:+.2f}
+⚠️ Reason: {reasons_str}"""
+        
         await self.send_message(message)
     
-    # ========== STATUS NOTIFICATIONS ==========
+    # ========== STATUS ==========
     
-    async def notify_bot_started(self, mode: str, spot_enabled: bool, futures_enabled: bool):
-        """Уведомление о запуске бота"""
-        message = f"""
-🚀 <b>BYBIT BOT ЗАПУЩЕН</b>
+    async def notify_bot_started(
+        self,
+        mode: str = "FUTURES",
+        spot_enabled: bool = False,
+        futures_enabled: bool = True,
+        spot_pairs: list = None,
+        futures_pairs: list = None
+    ):
+        """🤖 Bot Started"""
+        # Используем переданные пары или из настроек
+        f_pairs = futures_pairs or settings.futures_pairs
+        pairs = ", ".join(f_pairs[:3])
+        if len(f_pairs) > 3:
+            pairs += f" +{len(f_pairs) - 3}"
+        
+        mode_emoji = "🔀" if mode == "HYBRID" else ("📈" if mode == "FUTURES" else "💱")
+        
+        message = f"""🤖 <b>BOT STARTED</b>
 
-⚙️ <b>Режим:</b> {mode}
-├ SPOT: {'✅' if spot_enabled else '❌'}
-└ FUTURES: {'✅' if futures_enabled else '❌'}
-
-💰 <b>Настройки FUTURES:</b>
-├ Баланс: <b>${settings.futures_virtual_balance}</b>
-├ Плечо: <b>{settings.futures_leverage}x</b>
-└ Риск: <b>{settings.futures_risk_per_trade*100}%</b>
-
-📊 Пары: {', '.join(settings.futures_pairs)}
-
-⏰ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
-"""
+{mode_emoji} Mode: <b>{mode}</b>
+💰 Balance: <b>${settings.futures_virtual_balance}</b>
+⚡ Leverage: <b>{settings.futures_leverage}x</b> Isolated
+📊 Pairs: {pairs}
+📈 Trailing: {'ON' if settings.trailing_stop_enabled else 'OFF'}
+💸 Funding Filter: {'ON' if settings.funding_rate_filter_enabled else 'OFF'}"""
+        
         await self.send_message(message)
     
     async def notify_daily_summary(
         self,
-        futures_balance: float,
-        futures_pnl: float,
-        futures_trades: int,
-        futures_winrate: float,
-        spot_balance: float = 0,
-        spot_pnl: float = 0,
-        spot_trades: int = 0,
-        open_positions: int = 0
+        balance: float,
+        pnl_today: float,
+        trades_today: int,
+        winrate: float,
+        open_positions: int
     ):
-        """Ежедневная сводка"""
-        message = f"""
-📊 <b>ЕЖЕДНЕВНАЯ СВОДКА</b>
+        """📊 Daily Summary"""
+        pnl_emoji = "📈" if pnl_today >= 0 else "📉"
+        
+        message = f"""📊 <b>DAILY SUMMARY</b>
 
-💰 <b>FUTURES:</b>
-├ Баланс: <b>${futures_balance:,.2f}</b>
-├ PnL: <b>${futures_pnl:+.2f}</b>
-├ Сделок: <b>{futures_trades}</b>
-└ Win Rate: <b>{futures_winrate:.1f}%</b>
-
-💰 <b>SPOT:</b>
-├ Баланс: <b>${spot_balance:,.2f}</b>
-├ PnL: <b>${spot_pnl:+.2f}</b>
-└ Сделок: <b>{spot_trades}</b>
-
-📈 Открытых позиций: <b>{open_positions}</b>
-
-⏰ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
-"""
+💰 Balance: <b>${balance:,.2f}</b>
+{pnl_emoji} Today PnL: <b>${pnl_today:+.2f}</b>
+🎯 Trades: <b>{trades_today}</b> (WR: {winrate:.0f}%)
+📈 Open: <b>{open_positions}</b> positions"""
+        
         await self.send_message(message)
     
-    async def notify_risk_warning(self, warning: str, details: str = ""):
-        """Предупреждение о рисках"""
-        message = f"""
-⚠️ <b>ПРЕДУПРЕЖДЕНИЕ</b>
-
-{warning}
-{details}
-
-⏰ {datetime.utcnow().strftime('%H:%M:%S')} UTC
-"""
-        await self.send_message(message)
+    # ========== LEGACY COMPATIBILITY ==========
     
-    # ========== LEGACY METHODS (для совместимости) ==========
+    async def notify_futures_opened(self, **kwargs):
+        """Legacy -> notify_open"""
+        await self.notify_open(
+            symbol=kwargs.get('symbol', ''),
+            side=kwargs.get('side', 'LONG'),
+            entry_price=kwargs.get('entry_price', 0),
+            size_usd=kwargs.get('position_value', kwargs.get('quantity', 0) * kwargs.get('entry_price', 0)),
+            leverage=kwargs.get('leverage', 5),
+            stop_loss=kwargs.get('stop_loss', 0),
+            take_profit=kwargs.get('take_profit', 0),
+            reason=kwargs.get('reasoning', ''),
+            market_type='futures'
+        )
+    
+    async def notify_futures_closed(self, **kwargs):
+        """Legacy -> notify_close"""
+        await self.notify_close(
+            symbol=kwargs.get('symbol', ''),
+            side=kwargs.get('side', 'LONG'),
+            exit_price=kwargs.get('exit_price', 0),
+            pnl=kwargs.get('pnl', 0),
+            pnl_pct=kwargs.get('pnl_pct', 0),
+            duration_minutes=0,
+            reason=kwargs.get('reason', ''),
+            market_type='futures'
+        )
+    
+    async def notify_spot_opened(self, **kwargs):
+        """SPOT отключен"""
+        pass  # Игнорируем SPOT
+    
+    async def notify_spot_closed(self, **kwargs):
+        """SPOT отключен"""
+        pass  # Игнорируем SPOT
     
     async def notify_position_opened(self, trade_data: dict):
-        """Legacy метод"""
-        await self.send_message(
-            f"🟢 Позиция открыта: {trade_data.get('symbol', 'N/A')}"
-        )
+        """Legacy"""
+        pass
     
     async def notify_position_closed(self, trade_data: dict):
-        """Legacy метод"""
-        pnl = trade_data.get('pnl', 0)
-        emoji = "✅" if pnl > 0 else "❌"
-        await self.send_message(
-            f"{emoji} Позиция закрыта: {trade_data.get('symbol', 'N/A')} | PnL: ${pnl:+.2f}"
-        )
+        """Legacy"""
+        pass
+    
+    async def notify_safety_alert(self, closed_positions: list, total_pnl: float):
+        """Legacy"""
+        for pos in closed_positions:
+            await self.notify_safety_close(
+                symbol=pos.get('symbol', ''),
+                side=pos.get('side', ''),
+                pnl=pos.get('pnl', 0),
+                reasons=pos.get('reasons', [])
+            )
+    
+    async def notify_risk_warning(self, warning: str, details: str = ""):
+        """Legacy"""
+        await self.send_message(f"⚠️ {warning}\n{details}")
 
 
 # Singleton
-_telegram_notifier = None
+_telegram_reporter = None
 
-def get_telegram_notifier() -> TelegramNotifier:
-    """Получить singleton instance"""
-    global _telegram_notifier
-    if _telegram_notifier is None:
-        _telegram_notifier = TelegramNotifier()
-    return _telegram_notifier
+def get_telegram_notifier() -> TelegramReporter:
+    """Получить singleton (legacy name)"""
+    global _telegram_reporter
+    if _telegram_reporter is None:
+        _telegram_reporter = TelegramReporter()
+    return _telegram_reporter
+
+def get_telegram_reporter() -> TelegramReporter:
+    """Получить singleton"""
+    return get_telegram_notifier()
+
+
+# Alias для совместимости
+TelegramNotifier = TelegramReporter

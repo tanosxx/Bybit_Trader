@@ -58,6 +58,21 @@ class Settings(BaseSettings):
     leverage: int = 5
     margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'
     
+    # ========== TRAILING STOP Settings ==========
+    trailing_stop_enabled: bool = True  # Включить трейлинг-стоп
+    trailing_activation_pct: float = 1.0  # Активация при +1% профита
+    trailing_callback_pct: float = 0.5  # Дистанция трейлинга 0.5%
+    
+    # ========== FUNDING RATE Filter ==========
+    funding_rate_filter_enabled: bool = True  # Проверять funding rate
+    funding_rate_max_pct: float = 0.05  # Макс. ставка 0.05% для входа
+    funding_time_window_minutes: int = 60  # Окно до выплаты (минуты)
+    
+    # ========== POSITION LIMITS v5.0 ==========
+    futures_max_open_positions: int = 3  # Макс. открытых позиций
+    futures_min_confidence: float = 0.60  # Мин. confidence для входа (60%)
+    futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
+    
     # Trading Settings
     initial_balance: float = 50.0
     scan_interval: int = 60  # секунд
