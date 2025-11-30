@@ -127,48 +127,29 @@ class BybitSync:
                             print(f"   🔄 Реверс: {trade.symbol} {trade.side.value} -> {ex_pos['side']}")
                             closed += 1
                 
-                # 2. Добавляем позиции с биржи которых нет в БД
+                # 2. НЕ добавляем новые позиции - это делает бот!
+                # Только обновляем quantity существующих
                 for symbol, pos in exchange_positions.items():
-                    # Проверяем есть ли уже открытая позиция с такой стороной
                     existing = None
                     for t in db_trades:
                         if t.symbol == symbol and t.side.value == pos['side'] and t.status.value == 'OPEN':
                             existing = t
                             break
                     
-                    if not existing:
-                        from database.models import TradeSide, TradeStatus
-                        new_trade = Trade(
-                            symbol=symbol,
-                            side=TradeSide.BUY if pos['side'] == 'BUY' else TradeSide.SELL,
-                            entry_price=pos['entry_price'],
-                            quantity=pos['size'],
-                            status=TradeStatus.OPEN,
-                            entry_time=datetime.utcnow(),
-                            market_type='futures',
-                            stop_loss=pos['entry_price'] * (1.02 if pos['side'] == 'SELL' else 0.985),
-                            take_profit=pos['entry_price'] * (0.97 if pos['side'] == 'SELL' else 1.03),
-                            ai_model='Sync',
-                            ai_risk_score=5,
-                            ai_confidence=0.5,
-                            ai_reasoning=f'Synced from exchange (leverage: {pos["leverage"]}x)'
-                        )
-                        session.add(new_trade)
-                        print(f"   ➕ Добавлена: {symbol} {pos['side']} {pos['size']} @ ${pos['entry_price']:.2f}")
-                        added += 1
-                    else:
+                    if existing:
                         # Обновляем quantity если изменился
                         if abs(existing.quantity - pos['size']) > 0.0001:
                             existing.quantity = pos['size']
                             print(f"   🔄 Обновлена: {symbol} qty={pos['size']}")
                             synced += 1
+                    # НЕ добавляем новые - бот сам добавит при открытии!
                 
                 await session.commit()
                 
-                if closed + added + synced > 0:
-                    print(f"✅ Синхронизация: +{added} добавлено, -{closed} закрыто, ~{synced} обновлено")
+                if closed + synced > 0:
+                    print(f"✅ Синхронизация: -{closed} закрыто, ~{synced} обновлено")
                 else:
-                    print(f"✅ БД синхронизирована с биржей")
+                    print(f"✅ БД синхронизирована с биржей ({len(db_trades)} позиций)")
                 
         except Exception as e:
             print(f"❌ Ошибка синхронизации фьючерсов: {e}")
