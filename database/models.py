@@ -138,3 +138,54 @@ class AppConfig(Base):
     
     def __repr__(self):
         return f"<AppConfig {self.key}={self.value}>"
+
+
+class AIDecision(Base):
+    """Полное логирование AI решений для анализа"""
+    __tablename__ = "ai_decisions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    time = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    
+    # Рыночные данные
+    price = Column(Float, nullable=True)
+    rsi = Column(Float, nullable=True)
+    macd = Column(String(20), nullable=True)  # bullish/bearish
+    trend = Column(String(50), nullable=True)
+    
+    # News Brain
+    news_sentiment = Column(String(20), nullable=True)  # FEAR/GREED/NEUTRAL
+    news_score = Column(Float, nullable=True)
+    
+    # ML Predictor
+    ml_signal = Column(String(10), nullable=True)  # BUY/SELL/HOLD
+    ml_confidence = Column(Float, nullable=True)
+    ml_predicted_change = Column(Float, nullable=True)
+    
+    # Local Brain решение
+    local_decision = Column(String(10), nullable=True)  # BUY/SELL/HOLD/SKIP
+    local_confidence = Column(Float, nullable=True)
+    local_risk = Column(Integer, nullable=True)
+    
+    # Multi-Agent
+    agent_consensus = Column(Boolean, nullable=True)
+    agent_conservative = Column(Boolean, nullable=True)
+    agent_balanced = Column(Boolean, nullable=True)
+    agent_aggressive = Column(Boolean, nullable=True)
+    
+    # Futures Brain
+    futures_action = Column(String(10), nullable=True)  # LONG/SHORT/SKIP
+    futures_score = Column(Integer, nullable=True)
+    futures_confidence = Column(Float, nullable=True)
+    futures_leverage = Column(Integer, nullable=True)
+    
+    # Итоговое действие
+    final_action = Column(String(20), nullable=True)  # EXECUTED/SKIPPED/BLOCKED
+    execution_reason = Column(String(200), nullable=True)
+    
+    # Дополнительные данные
+    extra_data = Column(JSON, nullable=True)
+    
+    def __repr__(self):
+        return f"<AIDecision {self.time} {self.symbol} {self.final_action}>"

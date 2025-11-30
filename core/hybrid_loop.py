@@ -20,6 +20,7 @@ from core.executors.spot_executor import get_spot_executor
 from core.executors.futures_executor import get_futures_executor
 from core.futures_brain import get_futures_brain, FuturesAction
 from core.safety_guardian import get_safety_guardian
+from core.ai_logger import get_ai_logger
 
 from config import settings, is_spot_enabled, is_futures_enabled, get_spot_pairs, get_futures_pairs
 
@@ -202,8 +203,45 @@ class HybridTradingLoop:
             
             print(f"\n   🧠 FUTURES BRAIN: {futures_decision.action.value}")
             print(f"      Raw Conf: {futures_decision.raw_confidence:.0%} -> Trading Conf: {futures_decision.trading_confidence:.0f}%")
-            print(f"      Score: {futures_decision.total_score}/6 (need 3+)")
+            print(f"      Score: {futures_decision.total_score}/6 (need 1+)")
             print(f"      Agents: {futures_decision.agents_voted}")
+            
+            # ========== AI LOGGER - Полное логирование для анализа ==========
+            try:
+                ai_logger = get_ai_logger()
+                # Извлекаем данные из ai dict
+                ml_sig = ai.get('ml_signal')
+                ml_signal_str = ml_sig.get('decision') if isinstance(ml_sig, dict) else str(ml_sig) if ml_sig else None
+                ml_conf = ai.get('ml_confidence')
+                ml_conf_val = ml_conf if isinstance(ml_conf, (int, float)) else None
+                
+                await ai_logger.log_decision(
+                    symbol=symbol,
+                    price=price,
+                    rsi=technical.get('rsi'),
+                    macd=technical.get('macd', {}).get('trend'),
+                    trend=technical.get('trend'),
+                    news_sentiment=news_sentiment,
+                    news_score=ai.get('news_score'),
+                    ml_signal=ml_signal_str,
+                    ml_confidence=ml_conf_val,
+                    ml_predicted_change=ai.get('ml_change'),
+                    local_decision=decision,
+                    local_confidence=confidence,
+                    local_risk=risk_score,
+                    agent_consensus=multi_decision.get('consensus'),
+                    agent_conservative=futures_decision.agents_voted.get('conservative'),
+                    agent_balanced=futures_decision.agents_voted.get('balanced'),
+                    agent_aggressive=futures_decision.agents_voted.get('aggressive'),
+                    futures_action=futures_decision.action.value,
+                    futures_score=futures_decision.total_score,
+                    futures_confidence=futures_decision.trading_confidence,
+                    futures_leverage=futures_decision.leverage,
+                    final_action='EXECUTED' if futures_decision.action != FuturesAction.SKIP else 'SKIPPED',
+                    execution_reason=futures_decision.reasoning
+                )
+            except Exception as e:
+                print(f"⚠️ AI logging error: {e}")
             
             if futures_decision.action != FuturesAction.SKIP:
                 # Создаём сигнал с dynamic leverage
