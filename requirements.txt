@@ -31,5 +31,9 @@ xgboost==2.0.3
 # NLP - Sentiment Analysis (lightweight)
 vaderSentiment==3.3.2
 
+# RSS News Aggregation
+feedparser==6.0.10
+python-dateutil==2.8.2
+
 # ML - LSTM Model (уже используется!)
 tensorflow==2.18.0

@@ -77,7 +77,7 @@ class FuturesBrain:
         }
         
         # Порог для входа (снижен для большей активности)
-        self.min_score_to_trade = 2
+        self.min_score_to_trade = 1  # Минимум 1 агент должен согласиться
         
         # Лимит потерь на сделку (% от депозита)
         self.max_loss_per_trade_pct = 2.0

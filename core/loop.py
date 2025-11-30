@@ -182,6 +182,23 @@ class TradingLoop:
         else:
             regime_size_multiplier = 1.0
         
+        # ========== TREND FILTER (OPTIMIZED) 📈 ==========
+        if settings.require_trend_confirmation:
+            trend = analysis['technical'].get('trend', 'sideways')
+            
+            # Не торгуем против тренда
+            if decision == "BUY" and trend in ['downtrend', 'strong_downtrend']:
+                print(f"   ⏭️ Skipping BUY: against downtrend")
+                return
+            if decision == "SELL" and trend in ['uptrend', 'strong_uptrend']:
+                print(f"   ⏭️ Skipping SELL: against uptrend")
+                return
+            
+            # Уменьшаем размер в боковике
+            if trend == 'sideways':
+                regime_size_multiplier *= 0.7
+                print(f"   ⚠️ Sideways market: position size reduced to 70%")
+        
         # ========== MULTI-AGENT DECISION 🤖 ==========
         if self.use_multi_agent:
             market_data = {
@@ -217,7 +234,8 @@ class TradingLoop:
             ai_confidence = analysis['ai']['confidence']
             position_size_from_agent = None
         
-        strategy = STRATEGY_CONFIGS['aggressive']
+        # OPTIMIZED: используем balanced стратегию для стабильности
+        strategy = STRATEGY_CONFIGS['balanced']
         
         if ai_risk > strategy['max_risk']:
             print(f"⚠️ Риск слишком высокий: {ai_risk} > {strategy['max_risk']}")

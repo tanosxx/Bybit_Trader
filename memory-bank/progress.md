@@ -39,7 +39,15 @@
 - [x] Equity chart
 
 ### Фаза 7: LOCAL CORE ARCHITECTURE (27 ноября 2025)
-- [x] `core/news_brain.py` - CryptoPanic + VADER Sentiment
+- [x] `core/news_brain.py` - **ПЕРЕПИСАН** (30 ноября 2025)
+  - [x] Отказ от CryptoPanic API → RSS Агрегатор
+  - [x] 6 источников: CoinTelegraph, CoinDesk, Decrypt, BitcoinMagazine, BeInCrypto, TheBlock
+  - [x] Кастомный VADER с крипто-словарем (40+ терминов)
+  - [x] Взвешивание новостей (Bitcoin/Ethereum/SEC/Binance = x1.5)
+  - [x] Кэширование 60 сек, фильтр старых новостей (>2ч)
+  - [x] Async feedparser через run_in_executor
+  - [x] Обратная совместимость: `get_news_brain()`, `MarketSentiment`, `NewsBrain` wrapper
+  - [x] **ДЕПЛОЙ НА СЕРВЕР** - работает! Сентимент: GREED (0.16)
 - [x] `core/ml_service.py` - Оптимизированный ML (Singleton, TFLite, кэш, GC)
 - [x] `core/ai_brain_local.py` - Автономный Decision Tree
 - [x] Интеграция в loop.py

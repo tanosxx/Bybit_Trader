@@ -31,8 +31,8 @@ class SafetyGuardian:
         self.api = get_bybit_api()
         
         # Лимиты безопасности
-        self.max_position_value_usd = 500.0  # Макс размер позиции $500
-        self.max_total_exposure_usd = 1000.0  # Макс общая экспозиция $1000
+        self.max_position_value_usd = 800.0  # Макс размер позиции $800 (увеличено для leverage)
+        self.max_total_exposure_usd = 2500.0  # Макс общая экспозиция $2500
         self.require_stop_loss = True  # Требовать SL
         self.require_isolated = False  # Demo API не поддерживает ISOLATED!
         

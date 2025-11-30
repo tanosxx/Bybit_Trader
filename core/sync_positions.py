@@ -69,8 +69,114 @@ class BybitSync:
             import traceback
             traceback.print_exc()
     
+    async def sync_futures_positions(self):
+        """Синхронизировать фьючерсные позиции с биржей"""
+        try:
+            # Получаем реальные позиции с биржи
+            positions = await self.api.get_positions()
+            
+            # Фильтруем только открытые (size > 0)
+            exchange_positions = {}
+            for pos in positions:
+                size = float(pos.get('size', 0))
+                if size > 0:
+                    symbol = pos.get('symbol', '')
+                    side = 'BUY' if pos.get('side') == 'Buy' else 'SELL'
+                    exchange_positions[symbol] = {
+                        'side': side,
+                        'size': size,
+                        'entry_price': float(pos.get('entry_price', 0) or pos.get('avgPrice', 0)),
+                        'leverage': pos.get('leverage', '1')
+                    }
+            
+            print(f"\n📊 Фьючерсные позиции на бирже: {len(exchange_positions)}")
+            
+            async with async_session() as session:
+                # Получаем открытые позиции из БД
+                result = await session.execute(
+                    select(Trade).where(
+                        Trade.status == 'OPEN',
+                        Trade.market_type == 'futures'
+                    )
+                )
+                db_trades = list(result.scalars().all())
+                db_symbols = {t.symbol: t for t in db_trades}
+                
+                synced = 0
+                closed = 0
+                added = 0
+                
+                # 1. Закрываем позиции в БД которых нет на бирже
+                for trade in db_trades:
+                    if trade.symbol not in exchange_positions:
+                        trade.status = 'CLOSED'
+                        trade.exit_time = datetime.utcnow()
+                        trade.exit_price = trade.entry_price  # Примерно
+                        trade.exit_reason = 'Sync: closed on exchange'
+                        print(f"   ❌ Закрыта в БД: {trade.symbol} (нет на бирже)")
+                        closed += 1
+                    else:
+                        # Проверяем совпадение стороны
+                        ex_pos = exchange_positions[trade.symbol]
+                        if trade.side.value != ex_pos['side']:
+                            # Сторона изменилась - закрываем старую
+                            trade.status = 'CLOSED'
+                            trade.exit_time = datetime.utcnow()
+                            trade.exit_price = trade.entry_price
+                            trade.exit_reason = f'Sync: reversed to {ex_pos["side"]}'
+                            print(f"   🔄 Реверс: {trade.symbol} {trade.side.value} -> {ex_pos['side']}")
+                            closed += 1
+                
+                # 2. Добавляем позиции с биржи которых нет в БД
+                for symbol, pos in exchange_positions.items():
+                    # Проверяем есть ли уже открытая позиция с такой стороной
+                    existing = None
+                    for t in db_trades:
+                        if t.symbol == symbol and t.side.value == pos['side'] and t.status.value == 'OPEN':
+                            existing = t
+                            break
+                    
+                    if not existing:
+                        from database.models import TradeSide, TradeStatus
+                        new_trade = Trade(
+                            symbol=symbol,
+                            side=TradeSide.BUY if pos['side'] == 'BUY' else TradeSide.SELL,
+                            entry_price=pos['entry_price'],
+                            quantity=pos['size'],
+                            status=TradeStatus.OPEN,
+                            entry_time=datetime.utcnow(),
+                            market_type='futures',
+                            stop_loss=pos['entry_price'] * (1.02 if pos['side'] == 'SELL' else 0.985),
+                            take_profit=pos['entry_price'] * (0.97 if pos['side'] == 'SELL' else 1.03),
+                            ai_model='Sync',
+                            ai_risk_score=5,
+                            ai_confidence=0.5,
+                            ai_reasoning=f'Synced from exchange (leverage: {pos["leverage"]}x)'
+                        )
+                        session.add(new_trade)
+                        print(f"   ➕ Добавлена: {symbol} {pos['side']} {pos['size']} @ ${pos['entry_price']:.2f}")
+                        added += 1
+                    else:
+                        # Обновляем quantity если изменился
+                        if abs(existing.quantity - pos['size']) > 0.0001:
+                            existing.quantity = pos['size']
+                            print(f"   🔄 Обновлена: {symbol} qty={pos['size']}")
+                            synced += 1
+                
+                await session.commit()
+                
+                if closed + added + synced > 0:
+                    print(f"✅ Синхронизация: +{added} добавлено, -{closed} закрыто, ~{synced} обновлено")
+                else:
+                    print(f"✅ БД синхронизирована с биржей")
+                
+        except Exception as e:
+            print(f"❌ Ошибка синхронизации фьючерсов: {e}")
+            import traceback
+            traceback.print_exc()
+
     async def sync_open_orders(self):
-        """Синхронизировать открытые ордера"""
+        """Синхронизировать открытые ордера (SPOT)"""
         try:
             # Получаем открытые ордера для всех пар
             all_orders = []
@@ -83,85 +189,14 @@ class BybitSync:
                 except:
                     pass
             
-            # Также получаем без фильтра
-            try:
-                orders = await self.api.get_open_orders()
-                if orders:
-                    all_orders.extend(orders)
-            except:
-                pass
-            
             if not all_orders:
-                print("ℹ️ Нет открытых ордеров")
+                print("ℹ️ Нет открытых SPOT ордеров")
                 return
             
-            print(f"\n📊 Открытые ордера: {len(all_orders)}")
-            
-            async with async_session() as session:
-                # Получаем текущие открытые позиции из БД
-                result = await session.execute(
-                    select(Trade).where(Trade.status == 'OPEN')
-                )
-                db_trades = {(t.symbol, t.side): t for t in result.scalars().all()}
-                
-                synced_count = 0
-                
-                # Синхронизируем каждый ордер
-                for order in all_orders:
-                    try:
-                        symbol = order.get('symbol', '')
-                        side = order.get('side', '')  # Buy/Sell
-                        qty = float(order.get('qty', 0))
-                        price = float(order.get('price', 0))
-                        order_id = order.get('orderId', '')
-                        
-                        if qty == 0 or not symbol:
-                            continue
-                        
-                        # Нормализуем side
-                        side_normalized = 'BUY' if side == 'Buy' else 'SELL'
-                        
-                        key = (symbol, side_normalized)
-                        
-                        # Проверяем есть ли в БД
-                        if key in db_trades:
-                            # Обновляем существующую
-                            trade = db_trades[key]
-                            trade.quantity = qty
-                            trade.entry_price = price
-                            print(f"   🔄 {symbol} {side_normalized} {qty:.4f} @ ${price:.2f}")
-                        else:
-                            # Создаем новую
-                            new_trade = Trade(
-                                symbol=symbol,
-                                side=side_normalized,
-                                entry_price=price,
-                                quantity=qty,
-                                status='OPEN',
-                                entry_time=datetime.utcnow(),
-                                stop_loss=price * 1.02 if side_normalized == 'SELL' else price * 0.98,
-                                take_profit=price * 0.97 if side_normalized == 'SELL' else price * 1.03,
-                                ai_model='Manual',
-                                ai_risk_score=5,
-                                ai_confidence=0.5,
-                                ai_reasoning=f'Imported from Bybit (Order ID: {order_id})'
-                            )
-                            session.add(new_trade)
-                            print(f"   ➕ {symbol} {side_normalized} {qty:.4f} @ ${price:.2f}")
-                        
-                        synced_count += 1
-                        
-                    except Exception as e:
-                        print(f"   ⚠️ Ошибка обработки ордера: {e}")
-                        continue
-                
-                await session.commit()
-                print(f"✅ Синхронизировано {synced_count} ордеров")
+            print(f"\n📊 Открытые SPOT ордера: {len(all_orders)}")
                 
         except Exception as e:
             print(f"❌ Ошибка синхронизации ордеров: {e}")
-            import traceback
-            traceback.print_exc()
     
     async def sync_all(self):
         """Синхронизировать всё"""
@@ -170,6 +205,7 @@ class BybitSync:
         print("="*80)
         
         await self.sync_all_balances()
+        await self.sync_futures_positions()  # Синхронизация фьючерсов!
         await self.sync_open_orders()
         
         print("="*80 + "\n")

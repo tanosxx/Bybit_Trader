@@ -51,15 +51,19 @@ class LocalBrain:
         self.ml_predictor = get_ml_predictor_v2()  # LSTM модель v2
         self.ml_loaded = False
         
-        # Конфигурация
+        # Конфигурация - OPTIMIZED v2.2 (24/7 trading)
         self.config = {
-            'min_ml_confidence': 0.50,      # Минимальная уверенность ML (LSTM даёт 0.3-0.95)
-            'min_change_pct': 0.3,           # Минимальный % изменения для сигнала
-            'news_weight': 0.3,              # Вес новостей в решении
-            'ml_weight': 0.5,                # Вес ML в решении
-            'ta_weight': 0.2,                # Вес TA в решении
+            'min_ml_confidence': 0.55,       # Минимальная уверенность ML (55% - баланс)
+            'min_change_pct': 0.4,           # Минимальный % изменения для сигнала
+            'news_weight': 0.25,             # Вес новостей в решении
+            'ml_weight': 0.45,               # Вес ML в решении
+            'ta_weight': 0.30,               # Вес TA в решении (повышен!)
             'enable_news_analysis': True,    # Включить анализ новостей
-            'enable_panic_sell': True        # Включить паник-селл при плохих новостях
+            'enable_panic_sell': True,       # Включить паник-селл при плохих новостях
+            'require_ta_confirmation': False, # Отключено - слишком строго
+            'trading_hours_enabled': False,  # ОТКЛЮЧЕНО - торгуем 24/7
+            'trading_hours_start': 0,        # Начало торговли UTC (не используется)
+            'trading_hours_end': 24          # Конец торговли UTC (не используется)
         }
         
         # Статистика
@@ -342,14 +346,27 @@ class LocalBrain:
         
         return min(10, max(1, risk))
 
+    def _is_trading_hours(self) -> bool:
+        """Проверить, находимся ли в торговых часах"""
+        # Если фильтр отключен - всегда торгуем
+        if not self.config.get('trading_hours_enabled', True):
+            return True
+        
+        from datetime import datetime, timezone
+        current_hour = datetime.now(timezone.utc).hour
+        start = self.config.get('trading_hours_start', 0)
+        end = self.config.get('trading_hours_end', 24)
+        return start <= current_hour < end
+
     async def decide_trade(self, market_data: Dict) -> Dict:
         """
-        Главный метод принятия решения
+        Главный метод принятия решения - OPTIMIZED v2.0
         
         Decision Tree:
+        0. Trading Hours Check -> Skip if outside hours
         1. News Risk Check -> EXTREME_FEAR = PANIC_SELL
-        2. ML Signal -> Confidence check
-        3. TA Confirmation -> Boost/reduce confidence
+        2. ML Signal -> Confidence check (60%+)
+        3. TA Confirmation -> REQUIRED for entry
         4. Final Decision
         
         Args:
@@ -372,6 +389,24 @@ class LocalBrain:
         symbol = market_data.get('symbol', 'UNKNOWN')
         
         print(f"\n🧠 Local Brain analyzing {symbol}...")
+        
+        # ========== ШАГ 0: TRADING HOURS CHECK ==========
+        if not self._is_trading_hours():
+            from datetime import datetime, timezone
+            current_hour = datetime.now(timezone.utc).hour
+            print(f"   ⏰ Outside trading hours ({current_hour}:00 UTC). Skipping.")
+            self.stats['skips'] += 1
+            return {
+                'decision': 'SKIP',
+                'confidence': 0.0,
+                'risk_score': 5,
+                'source': DecisionSource.SAFETY_MODE.value,
+                'reasoning': f'Outside trading hours ({current_hour}:00 UTC)',
+                'position_size_multiplier': 0.0,
+                'news_sentiment': MarketSentiment.NEUTRAL.value,
+                'ml_signal': None,
+                'ta_confirmation': None
+            }
         
         # ========== ШАГ 1: NEWS RISK CHECK ==========
         news_data = await self._check_news_risk(symbol)
@@ -440,9 +475,16 @@ class LocalBrain:
         # Корректируем уверенность на основе TA
         final_confidence = ml_confidence
         if ta_data['confirms']:
-            final_confidence = min(0.95, ml_confidence * 1.1)  # Boost
+            final_confidence = min(0.95, ml_confidence * 1.15)  # Boost (увеличено)
         else:
-            final_confidence = ml_confidence * 0.85  # Reduce
+            final_confidence = ml_confidence * 0.75  # Reduce (ужесточено)
+        
+        # ========== TA CONFIRMATION (опционально) ==========
+        # Если TA не подтверждает - уменьшаем размер позиции вместо SKIP
+        if self.config.get('require_ta_confirmation', False) and not ta_data['confirms']:
+            if ml_decision in ['BUY', 'SELL']:
+                print(f"   ⚠️  TA does not confirm {ml_decision} - reducing position size")
+                # Не блокируем, но уменьшаем размер
         
         # ========== ШАГ 4: FINAL DECISION ==========
         risk_score = self._calculate_risk_score(market_data, news_data, final_confidence)

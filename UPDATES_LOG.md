@@ -160,3 +160,83 @@ bybit_base_url: str = "https://api-demo.bybit.com"  # Demo по умолчани
 ---
 
 **Важно:** Теперь все исходники должны храниться локально и в Git!
+
+
+---
+
+## 2025-11-30 - News Brain переписан на RSS Агрегатор
+
+### ✅ Что сделано:
+
+#### 1. **Полностью переписан `core/news_brain.py`**
+- ❌ Было: CryptoPanic API (100 req/month лимит, требует API ключ)
+- ✅ Стало: Собственный RSS агрегатор (бесплатно, без лимитов)
+
+**6 проверенных RSS источников:**
+```python
+RSS_FEEDS = [
+    "https://cointelegraph.com/rss",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://decrypt.co/feed",
+    "https://bitcoinmagazine.com/.rss/full/",
+    "https://beincrypto.com/feed/",
+    "https://theblock.co/rss.xml"
+]
+```
+
+#### 2. **Кастомный VADER с крипто-словарём (40+ терминов)**
+
+**Бычьи сигналы (+):**
+- bullish, bull, moon, mooning, pump, breakout
+- ath, all time high, adoption, partnership
+- launch, mainnet, buy the dip, rally, approval, upgrade
+
+**Медвежьи сигналы (-):**
+- bearish, bear, dump, crash, rekt
+- scam, rug, rugpull, hack, exploit, stolen
+- ban, regulation, sec, lawsuit, delist
+- insolvent, bankruptcy
+
+#### 3. **Взвешивание новостей по важности**
+- Новости с Bitcoin, Ethereum, SEC, Binance получают вес x1.5
+- Остальные новости — вес x1.0
+
+#### 4. **Защита от бана и оптимизация**
+- Кэширование результатов на 60 секунд
+- Фильтр новостей старше 2 часов
+- Дедупликация по хешу заголовка
+- Async feedparser через `run_in_executor`
+
+#### 5. **Обратная совместимость**
+- Добавлен `MarketSentiment` enum
+- Добавлен `NewsBrain` wrapper класс
+- Добавлена функция `get_news_brain()` для `ai_brain_local.py`
+
+### 📦 Новые зависимости в requirements.txt:
+```
+feedparser==6.0.10
+python-dateutil==2.8.2
+```
+
+### 🚀 Деплой на сервер:
+```bash
+# Файлы скопированы
+scp ./Bybit_Trader/core/news_brain.py root@88.210.10.145:/root/Bybit_Trader/core/
+scp ./Bybit_Trader/requirements.txt root@88.210.10.145:/root/Bybit_Trader/
+
+# Контейнер пересобран
+docker-compose down
+docker-compose up -d --build
+```
+
+### ✅ Результат:
+- Бот работает на сервере 88.210.10.145
+- Сентимент определяется: `GREED (score: 0.16)`
+- NewsBrain Stats: 5 calls, 0 errors
+- Нет зависимости от внешних API с лимитами
+
+### 📋 Измененные файлы:
+1. `Bybit_Trader/core/news_brain.py` - полностью переписан
+2. `Bybit_Trader/requirements.txt` - добавлены feedparser, python-dateutil
+3. `Bybit_Trader/memory-bank/activeContext.md` - обновлён статус
+4. `Bybit_Trader/memory-bank/progress.md` - отмечено выполнение

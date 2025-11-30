@@ -274,14 +274,19 @@ async def get_recent_trades(limit=20, market_type=None):
     
     async with session_maker() as session:
         query = select(Trade).where(Trade.status == TradeStatus.CLOSED)
+        # Только сделки с реальным exit_time (исключаем phantom cleanup)
+        query = query.where(Trade.exit_time.isnot(None))
         if market_type:
             query = query.where(Trade.market_type == market_type)
-            # Для futures исключаем старые SPOT записи с ошибками
+            # Для futures исключаем phantom cleanup, sync и ошибки
             if market_type == 'futures':
-                from sqlalchemy import or_
+                from sqlalchemy import and_
                 query = query.where(
-                    or_(
-                        Trade.exit_reason.is_(None),
+                    and_(
+                        Trade.exit_reason.isnot(None),
+                        ~Trade.exit_reason.like('%Phantom%'),
+                        ~Trade.exit_reason.like('%Sync%'),
+                        ~Trade.exit_reason.like('%closed on exchange%'),
                         ~Trade.exit_reason.like('%Coins not found%')
                     )
                 )
@@ -479,6 +484,24 @@ async def get_futures_virtual_balance():
         'leverage': settings.futures_leverage,
         'risk_per_trade': settings.futures_risk_per_trade * 100
     }
+
+@app.route('/api/futures/positions')
+def get_futures_positions_api():
+    """API для получения открытых фьючерсных позиций"""
+    try:
+        positions = asyncio.run(get_futures_positions())
+        return jsonify(positions)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/futures/trades')
+def get_futures_trades_api():
+    """API для получения закрытых фьючерсных сделок"""
+    try:
+        trades = asyncio.run(get_recent_trades(limit=50, market_type='futures'))
+        return jsonify(trades)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/data')
 def get_data():

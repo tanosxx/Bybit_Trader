@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     trading_mode: Literal['SPOT', 'FUTURES', 'HYBRID'] = 'HYBRID'
     
     # Включение/выключение рынков
-    spot_enabled: bool = True
+    spot_enabled: bool = False  # Временно отключено (нет монет на Demo)
     futures_enabled: bool = True
     
     # ========== SPOT Settings ==========
@@ -68,10 +68,19 @@ class Settings(BaseSettings):
     funding_rate_max_pct: float = 0.05  # Макс. ставка 0.05% для входа
     funding_time_window_minutes: int = 60  # Окно до выплаты (минуты)
     
-    # ========== POSITION LIMITS v5.0 ==========
-    futures_max_open_positions: int = 3  # Макс. открытых позиций
-    futures_min_confidence: float = 0.60  # Мин. confidence для входа (60%)
+    # ========== POSITION LIMITS v6.1 (ACTIVE TRADING) ==========
+    futures_max_open_positions: int = 10  # Макс. открытых позиций (увеличено для активной торговли)
+    futures_min_confidence: float = 0.50  # Мин. confidence для входа (50%) - активная торговля
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
+    
+    # ========== TRADING HOURS FILTER ==========
+    trading_hours_enabled: bool = False  # ОТКЛЮЧЕНО - торгуем 24/7
+    trading_hours_start: int = 0  # Начало торговли (UTC)
+    trading_hours_end: int = 24  # Конец торговли (UTC)
+    
+    # ========== TREND FILTER ==========
+    require_trend_confirmation: bool = False  # ОТКЛЮЧЕНО - торгуем и против тренда
+    min_trend_strength: float = 0.2  # Минимальная сила тренда для входа
     
     # Trading Settings
     initial_balance: float = 50.0
@@ -86,11 +95,11 @@ class Settings(BaseSettings):
     atr_sl_multiplier: float = 2.0  # SL = Price ± (ATR * multiplier)
     atr_tp_multiplier: float = 3.0  # TP = Price ± (ATR * multiplier)
     
-    # Fallback фиксированные стопы (если ATR недоступен)
-    max_position_size_pct: float = 20.0  # 20% от баланса
-    stop_loss_pct: float = 2.0  # -2%
-    take_profit_pct: float = 3.0  # +3%
-    max_drawdown_pct: float = 20.0  # -20% emergency stop
+    # Fallback фиксированные стопы (если ATR недоступен) - OPTIMIZED R:R 1:2
+    max_position_size_pct: float = 15.0  # 15% от баланса (уменьшено для безопасности)
+    stop_loss_pct: float = 1.5  # -1.5% (уменьшено для лучшего R:R)
+    take_profit_pct: float = 3.0  # +3% (R:R = 1:2)
+    max_drawdown_pct: float = 15.0  # -15% emergency stop (ужесточено)
     
     # Trading Pairs
     trading_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]

@@ -240,6 +240,21 @@ function fmt(v, d) {
     return (v !== null && v !== undefined && !isNaN(Number(v))) ? Number(v).toFixed(d || 2) : '0.00'; 
 }
 
+// Показываем время как есть (сервер уже в UTC, браузер сам конвертирует)
+function formatTime(timeStr) {
+    if (!timeStr) return '-';
+    try {
+        // Просто извлекаем время из строки "YYYY-MM-DD HH:MM:SS"
+        const timePart = timeStr.split(' ')[1];
+        if (timePart) {
+            return timePart.substring(0, 5); // HH:MM
+        }
+        return '-';
+    } catch(e) {
+        return utcTimeStr.split(' ')[1] || '-';
+    }
+}
+
 function fetchData() {
     fetch('/api/data')
         .then(r => r.json())
@@ -333,8 +348,8 @@ function updateUI(d) {
                 <td>$${fmt(t.exit_price)}</td>
                 <td>${fmt(t.quantity, 4)}</td>
                 <td class="${pnlClass}">${t.pnl >= 0 ? '+' : ''}$${fmt(t.pnl)}</td>
-                <td>${t.exit_reason || '-'}</td>
-                <td>${t.exit_time ? t.exit_time.split(' ')[1] : '-'}</td>
+                <td>${t.exit_reason || 'Manual'}</td>
+                <td>${t.exit_time ? formatTime(t.exit_time) : '-'}</td>
             </tr>`;
         });
         document.getElementById('trades-body').innerHTML = html;

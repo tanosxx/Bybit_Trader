@@ -132,6 +132,7 @@ class HybridTradingLoop:
     async def execute_hybrid(self, analysis: Dict):
         """
         Исполнить сигнал на обоих рынках параллельно
+        OPTIMIZED v2.0: Фильтры по тренду и времени
         """
         symbol = analysis['symbol']
         price = analysis['price']
@@ -142,6 +143,13 @@ class HybridTradingLoop:
         confidence = ai['confidence']
         risk_score = ai['risk_score']
         reasoning = ai['reasoning']
+        
+        # ========== TREND FILTER (DISABLED for active trading) 📈 ==========
+        # Фильтр отключен - торгуем и против тренда для большей активности
+        # trend = technical.get('trend', 'sideways')
+        # if decision == "BUY" and trend in ['downtrend', 'strong_downtrend']:
+        #     print(f"   ⏭️ Skipping BUY: against downtrend")
+        #     return
         
         # Multi-Agent проверка (даже если AI сказал SKIP)
         market_data = {
