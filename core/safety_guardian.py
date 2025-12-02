@@ -33,7 +33,7 @@ class SafetyGuardian:
         # Лимиты безопасности
         self.max_position_value_usd = 800.0  # Макс размер позиции $800 (увеличено для leverage)
         self.max_total_exposure_usd = 2500.0  # Макс общая экспозиция $2500
-        self.require_stop_loss = True  # Требовать SL
+        self.require_stop_loss = False  # ОТКЛЮЧЕНО: Demo API не поддерживает SL/TP при открытии
         self.require_isolated = False  # Demo API не поддерживает ISOLATED!
         
         # Статистика
