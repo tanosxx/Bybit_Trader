@@ -88,6 +88,9 @@ class Trade(Base):
     # ========== HYBRID TRADING ==========
     market_type = Column(String(20), default='spot', nullable=False, index=True)  # 'spot' или 'futures'
     
+    # ========== ONLINE LEARNING ==========
+    ml_features = Column(JSON, nullable=True)  # Фичи для самообучения (RSI, volatility, etc.)
+    
     extra_data = Column(JSON, nullable=True)  # agent_type, indicators, leverage, position_side, etc.
     
     def __repr__(self):

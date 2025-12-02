@@ -16,6 +16,14 @@ from enum import Enum
 from core.news_brain import get_news_brain, MarketSentiment
 from core.ml_predictor_v2 import get_ml_predictor_v2  # Используем существующую LSTM модель!
 
+# Online Learning (опционально - graceful degradation)
+try:
+    from core.self_learning import get_self_learner
+    SELF_LEARNING_AVAILABLE = True
+except ImportError:
+    SELF_LEARNING_AVAILABLE = False
+    print("⚠️ Self-learning module not available")
+
 
 class DecisionSource(Enum):
     """Источник решения"""
@@ -50,6 +58,15 @@ class LocalBrain:
         self.news_brain = get_news_brain()
         self.ml_predictor = get_ml_predictor_v2()  # LSTM модель v2
         self.ml_loaded = False
+        
+        # Online Learning (опционально)
+        self.self_learner = None
+        if SELF_LEARNING_AVAILABLE:
+            try:
+                self.self_learner = get_self_learner()
+            except Exception as e:
+                print(f"⚠️ Self-learner init failed: {e}")
+                self.self_learner = None
         
         # Конфигурация - OPTIMIZED v2.2 (24/7 trading)
         self.config = {
@@ -472,12 +489,51 @@ class LocalBrain:
         
         print(f"   📊 TA Confirmation: {'✅' if ta_data['confirms'] else '❌'} (strength: {ta_data['strength']:.0%})")
         
-        # Корректируем уверенность на основе TA
+        # ========== ШАГ 3.5: SELF-LEARNING PREDICTION (опционально) ==========
+        self_learning_score = 0.5  # Нейтральный по умолчанию
+        self_learning_confidence = 0.0
+        ml_features = None
+        
+        if self.self_learner:
+            try:
+                # Извлекаем фичи для Self-Learning
+                # Используем ta_data вместо market_data (правильная структура)
+                ml_features = self.self_learner.extract_features(
+                    technical={
+                        'rsi': ta_data.get('rsi', 50.0),
+                        'macd': {'trend': market_data.get('macd', 'neutral')},
+                        'bb': {'position': market_data.get('bb', 'within_bands')},
+                        'trend': {'direction': market_data.get('trend', 'neutral'), 'strength': 0.5},
+                        'volatility': market_data.get('volatility', 0.0),
+                        'volume_ratio': market_data.get('volume_ratio', 1.0)
+                    },
+                    news_score=news_data.get('score', 0.0),
+                    ml_confidence=ml_confidence
+                )
+                
+                # Получаем предсказание от Self-Learner
+                self_learning_score, self_learning_confidence = self.self_learner.predict(ml_features)
+                
+                if self.self_learner.learning_count >= 50:  # Только если модель обучена
+                    print(f"   🧠 Self-Learning: {self_learning_score:.2f} (conf: {self_learning_confidence:.2f})")
+            
+            except Exception as e:
+                print(f"   ⚠️ Self-learning prediction failed: {e}")
+                ml_features = None
+        
+        # Корректируем уверенность на основе TA + Self-Learning
         final_confidence = ml_confidence
+        
+        # TA влияние
         if ta_data['confirms']:
             final_confidence = min(0.95, ml_confidence * 1.15)  # Boost (увеличено)
         else:
             final_confidence = ml_confidence * 0.75  # Reduce (ужесточено)
+        
+        # Self-Learning влияние (20% веса, если модель обучена)
+        if self.self_learner and self.self_learner.learning_count >= 50:
+            # Взвешивание: 80% Static ML + 20% Self-Learning
+            final_confidence = (final_confidence * 0.8) + (self_learning_score * 0.2)
         
         # ========== TA CONFIRMATION (опционально) ==========
         # Если TA не подтверждает - уменьшаем размер позиции вместо SKIP
@@ -534,7 +590,8 @@ class LocalBrain:
             'position_size_multiplier': position_multiplier,
             'news_sentiment': sentiment.value,
             'ml_signal': ml_result,
-            'ta_confirmation': ta_data
+            'ta_confirmation': ta_data,
+            'ml_features': ml_features  # Для Self-Learning
         }
     
     def print_stats(self):

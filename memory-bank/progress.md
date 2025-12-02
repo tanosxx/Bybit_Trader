@@ -111,6 +111,22 @@
 
 ## ⏳ В процессе
 
+### Фаза 17: ONLINE LEARNING (2 декабря 2025) ✅ ЗАВЕРШЕНО
+- [x] Self-Learning модуль на базе River (ARF Classifier)
+- [x] Добавлено поле ml_features в Trade model
+- [x] SQL миграция для БД (add_ml_features.sql)
+- [x] Интеграция в AI Brain (сбор фич + предсказание)
+- [x] Интеграция в FuturesExecutor (сохранение фич)
+- [x] Интеграция в PositionMonitor (обучение на результатах)
+- [x] Graceful degradation (работает без River)
+- [x] Взвешивание: 80% Static ML + 20% Self-Learning
+- [x] Активация после 50+ сделок
+- [x] Документация (SELF_LEARNING_SETUP.md)
+- [x] Деплой скрипт (DEPLOY_SELF_LEARNING.sh)
+- [x] Деплой на сервер ✅
+- [x] Модуль активен и работает ✅
+- [ ] Мониторинг результатов (после 50+ сделок)
+
 ### Фаза 16: VIRTUAL BALANCE TRACKER (2 декабря 2025) ✅ ЗАВЕРШЕНО
 - [x] BalanceTracker - учёт виртуального баланса с комиссиями
 - [x] Запись fee_entry и fee_exit в БД

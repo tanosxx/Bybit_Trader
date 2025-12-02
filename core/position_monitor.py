@@ -13,6 +13,13 @@ from database.models import Trade, TradeStatus, TradeSide
 from core.bybit_api import get_bybit_api
 from config import settings
 
+# Online Learning (опционально - graceful degradation)
+try:
+    from core.self_learning import get_self_learner
+    SELF_LEARNING_AVAILABLE = True
+except ImportError:
+    SELF_LEARNING_AVAILABLE = False
+
 
 class PositionMonitor:
     """Мониторинг позиций и закрытие по SL/TP"""
@@ -21,6 +28,15 @@ class PositionMonitor:
         self.api = get_bybit_api()
         self.check_interval = 5  # Проверка каждые 5 секунд
         self.running = False
+        
+        # Online Learning (опционально)
+        self.self_learner = None
+        if SELF_LEARNING_AVAILABLE:
+            try:
+                self.self_learner = get_self_learner()
+            except Exception as e:
+                print(f"⚠️ Self-learner init failed in monitor: {e}")
+                self.self_learner = None
         
     async def get_current_price(self, symbol: str) -> float:
         """Получить текущую цену"""
@@ -80,6 +96,24 @@ class PositionMonitor:
                     await session.commit()
                 
                 print(f"   ✅ Closed: PnL ${pnl:.2f} ({pnl_pct:+.2f}%)")
+                
+                # ========== SELF-LEARNING: Обучение на результате ==========
+                if self.self_learner and trade.ml_features:
+                    try:
+                        # Определяем результат: 1 = Win (TP), 0 = Loss (SL)
+                        result = 1 if pnl > 0 else 0
+                        
+                        # Обучаем модель
+                        success = self.self_learner.learn(trade.ml_features, result)
+                        
+                        if success:
+                            stats = self.self_learner.get_stats()
+                            print(f"   🧠 Self-Learning: Learned from {'WIN' if result == 1 else 'LOSS'}")
+                            print(f"      Total samples: {stats['learned_samples']}, Win rate: {stats['win_rate']:.1f}%")
+                    
+                    except Exception as e:
+                        print(f"   ⚠️ Self-learning error: {e}")
+                
                 return True
             else:
                 print(f"   ❌ Failed to close on exchange")

@@ -37,3 +37,6 @@ python-dateutil==2.8.2
 
 # ML - LSTM Model (уже используется!)
 tensorflow==2.18.0
+
+# Online Learning
+river==0.21.0

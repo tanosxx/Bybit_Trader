@@ -246,13 +246,18 @@ class HybridTradingLoop:
             if futures_decision.action != FuturesAction.SKIP:
                 # Создаём сигнал с dynamic leverage
                 action_str = 'BUY' if futures_decision.action == FuturesAction.LONG else 'SELL'
+                
+                # Извлекаем ml_features из AI решения (если есть)
+                ml_features = ai.get('ml_features') if isinstance(ai, dict) else None
+                
                 futures_signal = TradeSignal(
                     action=action_str,
                     confidence=futures_decision.trading_confidence / 100,
                     risk_score=risk_score,
                     reasoning=futures_decision.reasoning,
                     symbol=symbol,
-                    price=price
+                    price=price,
+                    extra_data={'ml_features': ml_features} if ml_features else None
                 )
                 
                 # Устанавливаем dynamic leverage

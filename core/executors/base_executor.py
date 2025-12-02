@@ -35,6 +35,7 @@ class TradeSignal:
     reasoning: str
     symbol: str
     price: float
+    extra_data: Optional[Dict] = None  # Дополнительные данные (ml_features, etc.)
     
     @property
     def is_buy(self) -> bool:

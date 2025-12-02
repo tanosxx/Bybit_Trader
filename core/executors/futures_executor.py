@@ -1052,6 +1052,11 @@ class FuturesExecutor(BaseExecutor):
             entry_value = price * quantity
             entry_fee = entry_value * (TAKER_FEE_PCT / 100)
             
+            # Извлекаем ml_features из signal (если есть)
+            ml_features = None
+            if hasattr(signal, 'extra_data') and signal.extra_data:
+                ml_features = signal.extra_data.get('ml_features')
+            
             async with async_session() as session:
                 trade = Trade(
                     symbol=symbol,
@@ -1065,6 +1070,7 @@ class FuturesExecutor(BaseExecutor):
                     ai_risk_score=signal.risk_score,
                     ai_reasoning=signal.reasoning,
                     market_type='futures',
+                    ml_features=ml_features,  # Сохраняем фичи для Self-Learning
                     extra_data={
                         'bybit_order_id': order_id,
                         'confidence': signal.confidence,
