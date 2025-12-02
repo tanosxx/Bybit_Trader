@@ -81,23 +81,27 @@
     <!-- Main Balance -->
     <div class="balance-hero">
         <h2>💰 ВИРТУАЛЬНЫЙ БАЛАНС</h2>
-        <div class="big-number" id="current-balance">$500.00</div>
+        <div class="big-number" id="current-balance">$100.00</div>
         <div class="pnl-row">
             <div class="pnl-item">
                 <div class="pnl-label">Начальный</div>
-                <div class="pnl-value" id="initial-balance">$500.00</div>
+                <div class="pnl-value" id="initial-balance">$100.00</div>
             </div>
             <div class="pnl-item">
                 <div class="pnl-label">Realized PnL</div>
                 <div class="pnl-value positive" id="realized-pnl">+$0.00</div>
             </div>
             <div class="pnl-item">
-                <div class="pnl-label">Изменение</div>
-                <div class="pnl-value" id="pnl-pct">0.00%</div>
+                <div class="pnl-label">💸 Комиссии</div>
+                <div class="pnl-value negative" id="total-fees">-$0.00</div>
             </div>
             <div class="pnl-item">
-                <div class="pnl-label">Unrealized</div>
-                <div class="pnl-value" id="unrealized-pnl">$0.00</div>
+                <div class="pnl-label">Net PnL</div>
+                <div class="pnl-value" id="net-pnl">$0.00</div>
+            </div>
+            <div class="pnl-item">
+                <div class="pnl-label">Изменение</div>
+                <div class="pnl-value" id="pnl-pct">0.00%</div>
             </div>
         </div>
     </div>
@@ -271,9 +275,11 @@ function updateUI(d) {
     const trades = d.futures_trades || [];
     
     // Balance
-    const currentBal = futBal.current_balance || 500;
-    const initialBal = futBal.initial_balance || 500;
+    const currentBal = futBal.current_balance || 100;
+    const initialBal = futBal.initial_balance || 100;
     const realizedPnl = futBal.realized_pnl || 0;
+    const totalFees = futBal.total_fees || 0;
+    const netPnl = futBal.net_pnl || 0;
     const pnlPct = futBal.pnl_pct || 0;
     
     document.getElementById('current-balance').textContent = '$' + fmt(currentBal);
@@ -284,19 +290,20 @@ function updateUI(d) {
     realizedEl.textContent = (realizedPnl >= 0 ? '+$' : '-$') + fmt(Math.abs(realizedPnl));
     realizedEl.className = 'pnl-value ' + (realizedPnl >= 0 ? 'positive' : 'negative');
     
+    const feesEl = document.getElementById('total-fees');
+    feesEl.textContent = '-$' + fmt(totalFees);
+    feesEl.className = 'pnl-value negative';
+    
+    const netPnlEl = document.getElementById('net-pnl');
+    netPnlEl.textContent = (netPnl >= 0 ? '+$' : '-$') + fmt(Math.abs(netPnl));
+    netPnlEl.className = 'pnl-value ' + (netPnl >= 0 ? 'positive' : 'negative');
+    
     const pnlPctEl = document.getElementById('pnl-pct');
     pnlPctEl.textContent = (pnlPct >= 0 ? '+' : '') + fmt(pnlPct) + '%';
     pnlPctEl.className = 'pnl-value ' + (pnlPct >= 0 ? 'positive' : 'negative');
     
-    // Unrealized PnL
-    let totalUnrealized = 0;
-    positions.forEach(p => totalUnrealized += p.unrealized_pnl || 0);
-    const unrealizedEl = document.getElementById('unrealized-pnl');
-    unrealizedEl.textContent = (totalUnrealized >= 0 ? '+$' : '-$') + fmt(Math.abs(totalUnrealized));
-    unrealizedEl.className = 'pnl-value ' + (totalUnrealized >= 0 ? 'positive' : 'negative');
-    
     // Metrics
-    const totalTrades = stats.total_trades || 0;
+    const totalTrades = futBal.total_trades || stats.total_trades || 0;
     const wins = stats.wins || 0;
     const losses = totalTrades - wins;
     const winrate = stats.winrate || 0;
@@ -304,7 +311,7 @@ function updateUI(d) {
     document.getElementById('total-trades').textContent = totalTrades;
     document.getElementById('winrate').textContent = fmt(winrate, 1) + '%';
     document.getElementById('win-loss').textContent = wins + 'W / ' + losses + 'L';
-    document.getElementById('open-positions').textContent = positions.length;
+    document.getElementById('open-positions').textContent = futBal.open_positions || positions.length;
     document.getElementById('leverage').textContent = (futBal.leverage || 5) + 'x';
     document.getElementById('risk-per-trade').textContent = fmt(futBal.risk_per_trade || 10, 0) + '%';
     

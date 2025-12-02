@@ -946,6 +946,18 @@ class FuturesExecutor(BaseExecutor):
         else:
             pnl = (trade.entry_price - price) * trade.quantity * self.leverage
         
+        # ========== CALCULATE FEES ==========
+        TAKER_FEE_PCT = 0.055  # 0.055% Bybit taker fee
+        
+        # Entry fee (если не записан)
+        if not trade.fee_entry or trade.fee_entry == 0:
+            entry_value = trade.entry_price * trade.quantity
+            trade.fee_entry = entry_value * (TAKER_FEE_PCT / 100)
+        
+        # Exit fee
+        exit_value = price * trade.quantity
+        exit_fee = exit_value * (TAKER_FEE_PCT / 100)
+        
         # Update DB
         async with async_session() as session:
             trade.status = TradeStatus.CLOSED
@@ -954,11 +966,16 @@ class FuturesExecutor(BaseExecutor):
             trade.pnl = pnl
             trade.pnl_pct = (pnl / (trade.entry_price * trade.quantity)) * 100
             trade.exit_reason = reason
+            trade.fee_exit = exit_fee  # Записываем комиссию выхода
             session.add(trade)
             await session.commit()
         
-        self.record_trade(pnl)
-        self.update_balance(pnl)
+        # Обновляем баланс с учётом комиссий
+        total_fees = trade.fee_entry + exit_fee
+        net_pnl = pnl - total_fees
+        
+        self.record_trade(net_pnl)
+        self.update_balance(net_pnl)
         del self._current_positions[symbol]
         
         # Calculate duration
@@ -970,7 +987,10 @@ class FuturesExecutor(BaseExecutor):
         margin_used = trade.entry_price * trade.quantity  # Margin without leverage
         pnl_pct_margin = (pnl / margin_used) * 100 if margin_used > 0 else 0
         
-        print(f"✅ Closed {current_side} {symbol} @ ${price:.2f} | PnL: ${pnl:+.2f} ({pnl_pct_margin:+.1f}%)")
+        print(f"✅ Closed {current_side} {symbol} @ ${price:.2f}")
+        print(f"   💰 PnL: ${pnl:+.2f} ({pnl_pct_margin:+.1f}%)")
+        print(f"   💸 Fees: ${total_fees:.4f} (entry: ${trade.fee_entry:.4f}, exit: ${exit_fee:.4f})")
+        print(f"   💵 Net PnL: ${net_pnl:+.2f}")
         
         # TELEGRAM NOTIFICATION
         try:
@@ -979,7 +999,7 @@ class FuturesExecutor(BaseExecutor):
                 symbol=symbol,
                 side=current_side,
                 exit_price=price,
-                pnl=pnl,
+                pnl=net_pnl,  # Отправляем net PnL
                 pnl_pct=pnl_pct_margin,
                 duration_minutes=duration_minutes,
                 reason=reason
@@ -995,7 +1015,7 @@ class FuturesExecutor(BaseExecutor):
             side=f"CLOSE_{current_side}",
             quantity=float(qty_str),
             price=price,
-            pnl=pnl
+            pnl=net_pnl  # Возвращаем net PnL
         )
     
     async def close_position(self, symbol: str, reason: str) -> ExecutionResult:
@@ -1027,6 +1047,11 @@ class FuturesExecutor(BaseExecutor):
                           quantity: float, order_id: str, signal: TradeSignal,
                           position_side: str, stop_loss: float, take_profit: float) -> Optional[Trade]:
         try:
+            # Рассчитываем комиссию входа
+            TAKER_FEE_PCT = 0.055  # 0.055% Bybit taker fee
+            entry_value = price * quantity
+            entry_fee = entry_value * (TAKER_FEE_PCT / 100)
+            
             async with async_session() as session:
                 trade = Trade(
                     symbol=symbol,
@@ -1036,13 +1061,14 @@ class FuturesExecutor(BaseExecutor):
                     stop_loss=stop_loss,
                     take_profit=take_profit,
                     status=TradeStatus.OPEN,
+                    fee_entry=entry_fee,  # Записываем комиссию входа
                     ai_risk_score=signal.risk_score,
                     ai_reasoning=signal.reasoning,
                     market_type='futures',
                     extra_data={
                         'bybit_order_id': order_id,
                         'confidence': signal.confidence,
-                        'executor': 'FuturesExecutor_v3',
+                        'executor': 'FuturesExecutor_v5',
                         'leverage': self.leverage,
                         'position_side': position_side,
                         'margin_mode': 'ISOLATED',
@@ -1052,6 +1078,9 @@ class FuturesExecutor(BaseExecutor):
                 session.add(trade)
                 await session.commit()
                 await session.refresh(trade)
+                
+                print(f"   💸 Entry fee: ${entry_fee:.4f} ({TAKER_FEE_PCT}%)")
+                
                 return trade
         except Exception as e:
             print(f"❌ Save trade error: {e}")

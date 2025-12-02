@@ -439,7 +439,7 @@ async def get_futures_positions():
         return []
 
 async def get_futures_virtual_balance():
-    """Получить виртуальный баланс фьючерсов из БД (по закрытым сделкам)"""
+    """Получить виртуальный баланс фьючерсов из БД (по закрытым сделкам) с учётом комиссий"""
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
     from config import settings
     
@@ -449,31 +449,22 @@ async def get_futures_virtual_balance():
     initial_balance = settings.futures_virtual_balance  # $100
     
     # ФИЛЬТР: Только сделки с момента последнего деплоя (сегодня 16:00 UTC)
-    # Это когда был установлен баланс $100
     session_start = datetime(2025, 12, 2, 16, 0, 0)  # 2025-12-02 16:00:00 UTC
     
+    TAKER_FEE_PCT = 0.055  # 0.055% Bybit taker fee
+    
     async with session_maker() as session:
-        # Сумма PnL по закрытым фьючерсным сделкам С МОМЕНТА СБРОСА
-        pnl_result = await session.execute(
-            select(func.sum(Trade.pnl)).where(
-                Trade.status == TradeStatus.CLOSED,
-                Trade.market_type == 'futures',
-                Trade.entry_time >= session_start  # ФИЛЬТР ПО ДАТЕ!
-            )
-        )
-        realized_pnl = pnl_result.scalar() or 0.0
-        
-        # Количество сделок С МОМЕНТА СБРОСА
+        # Получаем все закрытые сделки
         trades_result = await session.execute(
-            select(func.count(Trade.id)).where(
+            select(Trade).where(
                 Trade.status == TradeStatus.CLOSED,
                 Trade.market_type == 'futures',
-                Trade.entry_time >= session_start  # ФИЛЬТР ПО ДАТЕ!
+                Trade.entry_time >= session_start
             )
         )
-        total_trades = trades_result.scalar() or 0
+        closed_trades = trades_result.scalars().all()
         
-        # Открытые позиции (без фильтра по дате - все текущие)
+        # Открытые позиции
         open_result = await session.execute(
             select(func.count(Trade.id)).where(
                 Trade.status == TradeStatus.OPEN,
@@ -482,15 +473,46 @@ async def get_futures_virtual_balance():
         )
         open_positions = open_result.scalar() or 0
     
-    current_balance = initial_balance + realized_pnl
-    pnl_pct = (realized_pnl / initial_balance * 100) if initial_balance > 0 else 0
+    # Рассчитываем PnL и комиссии
+    realized_pnl = 0.0
+    total_fees = 0.0
+    trading_fees = 0.0
+    
+    for trade in closed_trades:
+        # PnL
+        realized_pnl += float(trade.pnl or 0)
+        
+        # Комиссии
+        entry_fee = float(trade.fee_entry or 0)
+        exit_fee = float(trade.fee_exit or 0)
+        
+        # Если комиссии не записаны, рассчитываем
+        if entry_fee == 0:
+            entry_value = trade.entry_price * trade.quantity
+            entry_fee = entry_value * (TAKER_FEE_PCT / 100)
+        
+        if exit_fee == 0 and trade.exit_price:
+            exit_value = trade.exit_price * trade.quantity
+            exit_fee = exit_value * (TAKER_FEE_PCT / 100)
+        
+        trading_fees += (entry_fee + exit_fee)
+    
+    total_fees = trading_fees
+    
+    # Итоговый баланс с учётом комиссий
+    current_balance = initial_balance + realized_pnl - total_fees
+    pnl_pct = ((current_balance - initial_balance) / initial_balance * 100)
     
     return {
         'initial_balance': initial_balance,
         'current_balance': current_balance,
         'realized_pnl': float(realized_pnl),
+        'total_fees': float(total_fees),
+        'trading_fees': float(trading_fees),
+        'funding_fees': 0.0,  # TODO: логировать отдельно
+        'net_pnl': float(realized_pnl - total_fees),
         'pnl_pct': pnl_pct,
-        'total_trades': total_trades,
+        'total_trades': len(closed_trades),
         'open_positions': open_positions,
         'leverage': settings.futures_leverage,
         'risk_per_trade': settings.futures_risk_per_trade * 100,

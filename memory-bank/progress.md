@@ -111,6 +111,16 @@
 
 ## ⏳ В процессе
 
+### Фаза 16: VIRTUAL BALANCE TRACKER (2 декабря 2025) ✅ ЗАВЕРШЕНО
+- [x] BalanceTracker - учёт виртуального баланса с комиссиями
+- [x] Запись fee_entry и fee_exit в БД
+- [x] Расчёт Net PnL = Realized PnL - Total Fees
+- [x] Dashboard: отображение комиссий и net PnL
+- [x] API: get_futures_virtual_balance() с учётом комиссий
+- [x] Формула: current_balance = $100 + net_pnl
+- [x] Bybit taker fee: 0.055% (entry + exit)
+- [x] Деплой на сервер ✅
+
 ### Фаза 15: FUTURES EXECUTOR v5.0 (29 ноября 2025) ✅ ЗАВЕРШЕНО
 - [x] Лимит открытых позиций: max 3
 - [x] Минимальный confidence: 60%
