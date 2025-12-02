@@ -33,7 +33,7 @@ services:
     networks:
       - bybit_network
     restart: unless-stopped
-    command: python -u core/loop.py
+    command: python -u core/hybrid_loop.py
 
   sync:
     build: .
