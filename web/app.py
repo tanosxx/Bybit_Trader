@@ -183,24 +183,29 @@ async def get_stats():
             )
         )
         
-        # FUTURES stats
+        # FUTURES stats - ТОЛЬКО С МОМЕНТА ПОСЛЕДНЕГО ДЕПЛОЯ
+        session_start = datetime(2025, 12, 2, 16, 0, 0)  # 2025-12-02 16:00:00 UTC
+        
         futures_total = await session.execute(
             select(func.count(Trade.id)).where(
                 Trade.status == TradeStatus.CLOSED,
-                Trade.market_type == 'futures'
+                Trade.market_type == 'futures',
+                Trade.entry_time >= session_start  # ФИЛЬТР!
             )
         )
         futures_wins = await session.execute(
             select(func.count(Trade.id)).where(
                 Trade.status == TradeStatus.CLOSED,
                 Trade.market_type == 'futures',
-                Trade.pnl > 0
+                Trade.pnl > 0,
+                Trade.entry_time >= session_start  # ФИЛЬТР!
             )
         )
         futures_pnl = await session.execute(
             select(func.sum(Trade.pnl)).where(
                 Trade.status == TradeStatus.CLOSED,
-                Trade.market_type == 'futures'
+                Trade.market_type == 'futures',
+                Trade.entry_time >= session_start  # ФИЛЬТР!
             )
         )
         
@@ -441,28 +446,34 @@ async def get_futures_virtual_balance():
     engine = create_async_engine(settings.database_url, echo=False)
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
-    initial_balance = settings.futures_virtual_balance  # $500
+    initial_balance = settings.futures_virtual_balance  # $100
+    
+    # ФИЛЬТР: Только сделки с момента последнего деплоя (сегодня 16:00 UTC)
+    # Это когда был установлен баланс $100
+    session_start = datetime(2025, 12, 2, 16, 0, 0)  # 2025-12-02 16:00:00 UTC
     
     async with session_maker() as session:
-        # Сумма PnL по закрытым фьючерсным сделкам
+        # Сумма PnL по закрытым фьючерсным сделкам С МОМЕНТА СБРОСА
         pnl_result = await session.execute(
             select(func.sum(Trade.pnl)).where(
                 Trade.status == TradeStatus.CLOSED,
-                Trade.market_type == 'futures'
+                Trade.market_type == 'futures',
+                Trade.entry_time >= session_start  # ФИЛЬТР ПО ДАТЕ!
             )
         )
         realized_pnl = pnl_result.scalar() or 0.0
         
-        # Количество сделок
+        # Количество сделок С МОМЕНТА СБРОСА
         trades_result = await session.execute(
             select(func.count(Trade.id)).where(
                 Trade.status == TradeStatus.CLOSED,
-                Trade.market_type == 'futures'
+                Trade.market_type == 'futures',
+                Trade.entry_time >= session_start  # ФИЛЬТР ПО ДАТЕ!
             )
         )
         total_trades = trades_result.scalar() or 0
         
-        # Открытые позиции
+        # Открытые позиции (без фильтра по дате - все текущие)
         open_result = await session.execute(
             select(func.count(Trade.id)).where(
                 Trade.status == TradeStatus.OPEN,
@@ -482,7 +493,8 @@ async def get_futures_virtual_balance():
         'total_trades': total_trades,
         'open_positions': open_positions,
         'leverage': settings.futures_leverage,
-        'risk_per_trade': settings.futures_risk_per_trade * 100
+        'risk_per_trade': settings.futures_risk_per_trade * 100,
+        'session_start': session_start.strftime('%Y-%m-%d %H:%M:%S')
     }
 
 @app.route('/api/futures/positions')

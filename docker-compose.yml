@@ -72,6 +72,22 @@ services:
     restart: unless-stopped
     command: python web/app.py
 
+  monitor:
+    build: .
+    container_name: bybit_monitor
+    depends_on:
+      - postgres_bybit
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bybit_user:bybit_secure_pass_2024@postgres_bybit:5432/bybit_trader
+      - BYBIT_API_KEY=${BYBIT_API_KEY}
+      - BYBIT_API_SECRET=${BYBIT_API_SECRET}
+      - BYBIT_TESTNET=${BYBIT_TESTNET}
+      - BYBIT_BASE_URL=${BYBIT_BASE_URL}
+    networks:
+      - bybit_network
+    restart: unless-stopped
+    command: python -u core/position_monitor.py
+
 volumes:
   bybit_db_data:
 

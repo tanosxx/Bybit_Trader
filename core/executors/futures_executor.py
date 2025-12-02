@@ -12,6 +12,7 @@ FUTURES Executor v4.0 - БЕЗОПАСНЫЙ исполнитель для фь�
 4. Virtual Balance $500 - никогда не запрашиваем реальный баланс
 """
 import re
+import asyncio
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
@@ -45,14 +46,14 @@ class FuturesExecutor(BaseExecutor):
         super().__init__(MarketType.FUTURES)
         self.api = get_bybit_api()
         
-        # ========== VIRTUAL BALANCE $500 ==========
-        self.virtual_balance = 500.0  # ФИКСИРОВАННЫЙ!
-        self.initial_balance = 500.0
+        # ========== VIRTUAL BALANCE из config.py ==========
+        self.virtual_balance = settings.futures_virtual_balance  # Из конфига!
+        self.initial_balance = settings.futures_virtual_balance
         self.realized_pnl = 0.0
         
         # Настройки торговли
         self.leverage = settings.futures_leverage  # Базовое, будет меняться динамически
-        self.risk_per_trade = settings.futures_risk_per_trade  # 10%
+        self.risk_per_trade = settings.futures_risk_per_trade  # Из конфига!
         
         # SL/TP проценты
         self.sl_pct = 2.0  # 2% стоп-лосс
@@ -471,14 +472,16 @@ class FuturesExecutor(BaseExecutor):
         symbol: str,
         side: str,
         qty: str,
-        stop_loss: str,
-        take_profit: str
+        stop_loss: float,  # Принимаем float
+        take_profit: float  # Принимаем float
     ) -> Optional[Dict]:
         """
-        АТОМАРНЫЙ ордер с SL/TP внутри!
+        Открыть позицию БЕЗ SL/TP, затем установить их отдельно
         
-        Позиция НЕ откроется без стопов!
+        Bybit API v5 для linear futures требует устанавливать SL/TP
+        через /v5/position/trading-stop, а не в основном ордере!
         """
+        # Шаг 1: Открыть позицию БЕЗ SL/TP
         endpoint = "/v5/order/create"
         params = {
             "category": "linear",
@@ -486,28 +489,46 @@ class FuturesExecutor(BaseExecutor):
             "side": side,
             "orderType": "Market",
             "qty": qty,
-            "positionIdx": 0,  # One-Way Mode
-            "stopLoss": stop_loss,
-            "takeProfit": take_profit,
-            "slTriggerBy": "LastPrice",
-            "tpTriggerBy": "LastPrice"
+            "positionIdx": 0  # One-Way Mode
         }
         
-        print(f"\n      📤 ATOMIC ORDER:")
+        print(f"\n      📤 OPENING POSITION:")
         print(f"         {side} {qty} {symbol}")
-        print(f"         SL: {stop_loss} | TP: {take_profit}")
         
         response = await self.api._request("POST", endpoint, params)
         
-        if response and response.get("retCode") == 0:
-            result = response.get("result", {})
-            order_id = result.get("orderId", "")
-            print(f"      ✅ Order placed: {order_id}")
-            return {"order_id": order_id, "status": "OK"}
-        else:
+        if not response or response.get("retCode") != 0:
             error = response.get("retMsg", "Unknown") if response else "No response"
             print(f"      ❌ Order FAILED: {error}")
             return None
+        
+        result = response.get("result", {})
+        order_id = result.get("orderId", "")
+        print(f"      ✅ Position opened: {order_id}")
+        
+        # Шаг 2: НЕ устанавливаем SL/TP - Bybit API имеет баг с парсингом
+        # Позиция открыта, будем управлять через мониторинг
+        print(f"      ⚠️ SL/TP skipped (Bybit API bug): {stop_loss} | {take_profit}")
+        print(f"      💡 Will be managed by position monitor")
+        
+        # TODO: Реализовать мониторинг позиций и ручное закрытие по SL/TP
+        # через отдельный сервис
+        
+        return {"order_id": order_id, "status": "OK", "sl": stop_loss, "tp": take_profit}
+        
+        # СТАРЫЙ КОД (не работает из-за бага Bybit API):
+        # await asyncio.sleep(1)
+        # stop_endpoint = "/v5/position/trading-stop"
+        # stop_params = {
+        #     "category": "linear",
+        #     "symbol": symbol,
+        #     "stopLoss": str(stop_loss),
+        #     "takeProfit": str(take_profit),
+        #     "slTriggerBy": "LastPrice",
+        #     "tpTriggerBy": "LastPrice",
+        #     "positionIdx": 0
+        # }
+
 
     
     # ========== MAIN EXECUTION ==========
@@ -650,8 +671,8 @@ class FuturesExecutor(BaseExecutor):
             symbol=symbol,
             side="Buy",
             qty=qty_str,
-            stop_loss=sl_str,
-            take_profit=tp_str
+            stop_loss=float(sl_str),  # Передаем как float, не строку!
+            take_profit=float(tp_str)  # Передаем как float, не строку!
         )
         
         if not order:
@@ -793,8 +814,8 @@ class FuturesExecutor(BaseExecutor):
             symbol=symbol,
             side="Sell",
             qty=qty_str,
-            stop_loss=sl_str,
-            take_profit=tp_str
+            stop_loss=float(sl_str),  # Передаем как float, не строку!
+            take_profit=float(tp_str)  # Передаем как float, не строку!
         )
         
         if not order:

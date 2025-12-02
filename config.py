@@ -49,9 +49,9 @@ class Settings(BaseSettings):
     
     # ========== FUTURES Settings ==========
     # КРИТИЧНО: Бот использует ТОЛЬКО этот баланс для расчёта позиций!
-    futures_virtual_balance: float = 500.0  # $500 виртуальный лимит (увеличено для min qty)
+    futures_virtual_balance: float = 100.0  # $100 виртуальный стартовый капитал
     futures_leverage: int = 5  # Плечо (рекомендую 3-5x для начала)
-    futures_risk_per_trade: float = 0.10  # 10% от виртуального баланса
+    futures_risk_per_trade: float = 0.20  # 20% от виртуального баланса (агрессивно!)
     futures_margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'
     
     # Legacy (для совместимости)
