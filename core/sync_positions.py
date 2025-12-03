@@ -112,36 +112,56 @@ class BybitSync:
                 
                 # 1. Закрываем позиции в БД которых нет на бирже ИЛИ size=0
                 for trade in db_trades:
+                    should_close = False
+                    close_reason = ""
+                    
                     # Если символа нет в активных позициях биржи
                     if trade.symbol not in exchange_positions:
                         # Проверяем: может символ есть но size=0?
                         if trade.symbol in exchange_symbols:
                             # Позиция закрыта на бирже (size=0)
-                            trade.status = 'CLOSED'
-                            trade.exit_time = datetime.utcnow()
-                            trade.exit_price = trade.entry_price
-                            trade.exit_reason = 'Sync: closed on exchange (size=0)'
+                            should_close = True
+                            close_reason = 'Sync: closed on exchange (size=0)'
                             print(f"   ❌ Закрыта в БД: {trade.symbol} (size=0 на бирже)")
-                            closed += 1
                         else:
                             # Символа вообще нет - тоже закрываем
-                            trade.status = 'CLOSED'
-                            trade.exit_time = datetime.utcnow()
-                            trade.exit_price = trade.entry_price
-                            trade.exit_reason = 'Sync: not found on exchange'
+                            should_close = True
+                            close_reason = 'Sync: not found on exchange'
                             print(f"   ❌ Закрыта в БД: {trade.symbol} (не найдена на бирже)")
-                            closed += 1
                     else:
                         # Проверяем совпадение стороны
                         ex_pos = exchange_positions[trade.symbol]
                         if trade.side.value != ex_pos['side']:
                             # Сторона изменилась - закрываем старую
-                            trade.status = 'CLOSED'
-                            trade.exit_time = datetime.utcnow()
-                            trade.exit_price = trade.entry_price
-                            trade.exit_reason = f'Sync: reversed to {ex_pos["side"]}'
+                            should_close = True
+                            close_reason = f'Sync: reversed to {ex_pos["side"]}'
                             print(f"   🔄 Реверс: {trade.symbol} {trade.side.value} -> {ex_pos['side']}")
-                            closed += 1
+                    
+                    if should_close:
+                        trade.status = 'CLOSED'
+                        trade.exit_time = datetime.utcnow()
+                        trade.exit_price = trade.entry_price
+                        trade.exit_reason = close_reason
+                        closed += 1
+                        
+                        # ========== SELF-LEARNING: Обучение на результате ==========
+                        if trade.ml_features and trade.pnl is not None:
+                            try:
+                                from core.self_learning import get_self_learner
+                                learner = get_self_learner()
+                                
+                                # Определяем результат: 1 = Win, 0 = Loss
+                                result = 1 if trade.pnl > 0 else 0
+                                
+                                # Обучаем модель
+                                success = learner.learn(trade.ml_features, result)
+                                
+                                if success:
+                                    stats = learner.get_stats()
+                                    print(f"      🧠 ML: Learned from {'WIN' if result == 1 else 'LOSS'} (samples: {stats['learned_samples']})")
+                            
+                            except Exception as e:
+                                print(f"      ⚠️ ML error (ignored): {e}")
                 
                 # 2. НЕ добавляем новые позиции - это делает бот!
                 # Только обновляем quantity существующих

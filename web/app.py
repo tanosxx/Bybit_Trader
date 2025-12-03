@@ -283,15 +283,14 @@ async def get_recent_trades(limit=20, market_type=None):
         query = query.where(Trade.exit_time.isnot(None))
         if market_type:
             query = query.where(Trade.market_type == market_type)
-            # Для futures исключаем phantom cleanup, sync и ошибки
+            # Для futures исключаем только phantom cleanup и технические ошибки
             if market_type == 'futures':
                 from sqlalchemy import and_
                 query = query.where(
                     and_(
                         Trade.exit_reason.isnot(None),
                         ~Trade.exit_reason.like('%Phantom%'),
-                        ~Trade.exit_reason.like('%Sync%'),
-                        ~Trade.exit_reason.like('%closed on exchange%'),
+                        ~Trade.exit_reason.like('%not found%'),
                         ~Trade.exit_reason.like('%Coins not found%')
                     )
                 )
