@@ -103,7 +103,8 @@ class SelfLearner:
     
     def _save_model(self):
         """Сохранить модель в файл"""
-        if not self.enabled or not self.model:
+        if not self.enabled or self.model is None:
+            print(f"⚠️ SelfLearner: Cannot save - enabled={self.enabled}, model={self.model is not None}")
             return
         
         try:
@@ -119,9 +120,13 @@ class SelfLearner:
             
             with open(self.model_path, 'wb') as f:
                 pickle.dump(data, f)
+            
+            print(f"✅ SelfLearner: Model saved to {self.model_path}")
         
         except Exception as e:
             print(f"⚠️ SelfLearner: Error saving model: {e}")
+            import traceback
+            traceback.print_exc()
     
     def extract_features(self, technical: Dict, news_score: float = 0.0, 
                         ml_confidence: float = 0.5) -> Dict:
@@ -245,7 +250,7 @@ class SelfLearner:
             print(f"⚠️ SelfLearner: Not enabled")
             return False
         
-        if not self.model:
+        if self.model is None:
             print(f"⚠️ SelfLearner: No model")
             return False
         

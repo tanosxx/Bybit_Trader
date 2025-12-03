@@ -76,7 +76,7 @@
 <body>
 <div class="container">
     <h1>📈 FUTURES Dashboard</h1>
-    <p class="subtitle">Bybit Demo Trading | Virtual Balance $500 | ISOLATED Margin</p>
+    <p class="subtitle">Bybit Demo Trading | Virtual Balance $100 | ISOLATED Margin | v2.0</p>
     
     <!-- Main Balance -->
     <div class="balance-hero">
@@ -121,7 +121,7 @@
         <div class="metric">
             <div class="metric-label">📈 Открыто</div>
             <div class="metric-value" id="open-positions">0</div>
-            <div class="metric-sub">позиций</div>
+            <div class="metric-sub" id="open-positions-sub">позиций</div>
         </div>
         <div class="metric">
             <div class="metric-label">⚡ Leverage</div>
@@ -129,9 +129,9 @@
             <div class="metric-sub">текущее</div>
         </div>
         <div class="metric">
-            <div class="metric-label">🎲 Risk/Trade</div>
-            <div class="metric-value" id="risk-per-trade">10%</div>
-            <div class="metric-sub">от баланса</div>
+            <div class="metric-label">🧠 Self-Learning</div>
+            <div class="metric-value" id="ml-samples">0</div>
+            <div class="metric-sub" id="ml-status">обучается...</div>
         </div>
     </div>
     
@@ -311,9 +311,30 @@ function updateUI(d) {
     document.getElementById('total-trades').textContent = totalTrades;
     document.getElementById('winrate').textContent = fmt(winrate, 1) + '%';
     document.getElementById('win-loss').textContent = wins + 'W / ' + losses + 'L';
-    document.getElementById('open-positions').textContent = futBal.open_positions || positions.length;
+    document.getElementById('open-positions').textContent = positions.length;
     document.getElementById('leverage').textContent = (futBal.leverage || 5) + 'x';
-    document.getElementById('risk-per-trade').textContent = fmt(futBal.risk_per_trade || 10, 0) + '%';
+    
+    // ML Status
+    const mlStatus = d.ml_status || {};
+    if (mlStatus.enabled && mlStatus.ready) {
+        document.getElementById('ml-samples').textContent = mlStatus.learned_samples || 0;
+        document.getElementById('ml-status').textContent = `WR: ${fmt(mlStatus.win_rate || 0, 1)}%`;
+    } else if (mlStatus.enabled) {
+        document.getElementById('ml-samples').textContent = mlStatus.learned_samples || 0;
+        document.getElementById('ml-status').textContent = 'обучается...';
+    } else {
+        document.getElementById('ml-samples').textContent = '—';
+        document.getElementById('ml-status').textContent = 'отключено';
+    }
+    
+    // Показываем агрегацию позиций
+    const dbPositions = futBal.open_positions || 0;
+    const exchangePositions = positions.length;
+    if (dbPositions > exchangePositions) {
+        document.getElementById('open-positions-sub').textContent = `(${dbPositions} ордеров в БД)`;
+    } else {
+        document.getElementById('open-positions-sub').textContent = 'на бирже';
+    }
     
     // Positions
     if (positions.length > 0) {
@@ -322,81 +343,84 @@ function updateUI(d) {
             const sideClass = p.side === 'LONG' ? 'long' : 'short';
             const pnlClass = p.unrealized_pnl >= 0 ? 'positive' : 'negative';
             const pnlPctPos = p.pnl_pct || 0;
+            || 1;
             
-            html += `<div class="position-card ${sideClass}">
+            html += `<div class="position-car}">
                 <div class="position-header">
                     <span class="position-symbol">${p.symbol}</span>
-                    <span class="position-side ${sideClass}">${p.side} ${p.leverage}x</span>
+                    <s
                 </div>
+                <div class="position-row"><span class="position-label">📊 Ордеров на бирже:</span><span style="font-weight: iv>
                 <div class="position-row"><span class="position-label">Размер:</span><span>${fmt(p.size, 4)}</span></div>
-                <div class="position-row"><span class="position-label">Вход:</span><span>$${fmt(p.entry_price)}</span></div>
-                <div class="position-row"><span class="position-label">Текущая:</span><span>$${fmt(p.mark_price)}</span></div>
-                <div class="position-row"><span class="position-label">Изменение:</span><span class="${pnlClass}">${pnlPctPos >= 0 ? '+' : ''}${fmt(pnlPctPos)}%</span></div>
-                <div class="position-pnl ${pnlClass}">${p.unrealized_pnl >= 0 ? '+' : ''}$${fmt(p.unrealized_pnl)}</div>
+                <div class="position-row"><span class="position-label">Вход:</span><span>${fmt(p.entry_price)}</span></div>
+                <div class="position-row"><span class="position-label">Текущая:</span><span>${fmt(p.mark_price)}</span><iv>
+                <div>
+           >
             </div>`;
         });
         document.getElementById('positions-container').innerHTML = html;
-    } else {
-        document.getElementById('positions-container').innerHTML = '<div style="color: #888; text-align: center; padding: 30px;">Нет открытых позиций</div>';
+    }
+    iv>';
     }
     
     // Trades table
     if (trades.length > 0) {
         let html = '';
         trades.slice(0, 15).forEach(t => {
-            const pnlClass = t.pnl >= 0 ? 'positive' : 'negative';
-            const sideClass = t.side === 'BUY' ? 'side-long' : 'side-short';
-            const sideText = t.side === 'BUY' ? 'LONG' : 'SHORT';
+            const pnlClass = t.pnl >= 0 ? 'positive' : 'negative'
+            
+            const sideTex
             
             html += `<tr>
                 <td>${t.symbol}</td>
-                <td class="${sideClass}">${sideText}</td>
-                <td>$${fmt(t.entry_price)}</td>
-                <td>$${fmt(t.exit_price)}</td>
+                <td class="${sideClass}">${sidtd>
+                <td>${fmt(t.entry_price)}</td>
+                <td>${fmt(t.exit_price)}</td>
                 <td>${fmt(t.quantity, 4)}</td>
-                <td class="${pnlClass}">${t.pnl >= 0 ? '+' : ''}$${fmt(t.pnl)}</td>
-                <td>${t.exit_reason || 'Manual'}</td>
-                <td>${t.exit_time ? formatTime(t.exit_time) : '-'}</td>
+                <td class="${pnlClass}">${t.pnl >= 0 ? '+' : ''}${fmt(t>
+                <tdtd>
+           </td>
             </tr>`;
         });
         document.getElementById('trades-body').innerHTML = html;
     } else {
-        document.getElementById('trades-body').innerHTML = '<tr><td colspan="8" style="color:#888; text-align:center;">Нет закрытых сделок</td></tr>';
+    ;
     }
     
     // Equity chart - cumulative PnL
     if (trades.length > 0) {
-        const sortedTrades = [...trades].reverse();
+        const sortedTrades = [...trades];
         let cumPnl = initialBal;
-        const equityData = [initialBal];
+        ;
         const labels = ['Start'];
         
-        sortedTrades.forEach((t, i) => {
-            cumPnl += (t.pnl || 0);
-            equityData.push(cumPnl);
-            labels.push(i + 1);
+        sortedTrades.forEach((t, i)  {
+            cumPnl += (t.pnl ||
+           mPnl);
+         1);
         });
         
-        equityChart.data.labels = labels;
-        equityChart.data.datasets[0].data = equityData;
-        equityChart.update();
+        equityChart.data.labelabels;
+     uityData;
+    date();
     }
     
     // PnL chart
     if (trades.length > 0) {
-        const pnls = trades.slice(0, 25).map(t => t.pnl || 0).reverse();
+        const pnls = trades.slice(0, 25).map(t
         pnlChart.data.labels = pnls.map((_, i) => i + 1);
-        pnlChart.data.datasets[0].data = pnls;
-        pnlChart.data.datasets[0].backgroundColor = pnls.map(p => p >= 0 ? '#00ff88' : '#ff4444');
-        pnlChart.update();
+        pnlChart.data.data
+     
+    .update();
     }
     
-    document.getElementById('last-update').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+ru-RU');
 }
 
 initCharts();
-fetchData();
-setInterval(fetchData, 5000);
-</script>
-</body>
+fetchData;
+setInte0);
+</scrip
+
 </html>
+</body>

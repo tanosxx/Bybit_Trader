@@ -69,23 +69,86 @@ class FuturesExecutor(BaseExecutor):
         self.funding_max_pct = settings.funding_rate_max_pct  # 0.05%
         self.funding_time_window = settings.funding_time_window_minutes  # 60 min
         
-        # ========== POSITION LIMITS v5.0 ==========
-        self.max_open_positions = settings.futures_max_open_positions  # 3
-        self.min_confidence = settings.futures_min_confidence  # 0.60
+        # ========== POSITION LIMITS v6.2 ==========
+        self.max_open_positions = settings.futures_max_open_positions  # 5 уникальных символов
+        self.max_orders_per_symbol = settings.futures_max_orders_per_symbol  # 15 ордеров на символ
+        self.max_total_orders = settings.futures_max_total_orders  # 60 всего ордеров
+        self.min_confidence = settings.futures_min_confidence  # 0.50
         
         # Текущие позиции
         self._current_positions: Dict[str, str] = {}
         
-        print(f"🚀 FuturesExecutor v5.0 initialized:")
+        print(f"🚀 FuturesExecutor v6.2 initialized:")
         print(f"   💰 Virtual Balance: ${self.virtual_balance}")
         print(f"   📊 Base Leverage: {self.leverage}x (dynamic 2-7x)")
         print(f"   🎯 Risk per Trade: {self.risk_per_trade*100}%")
         print(f"   🛡️ SL: {self.sl_pct}% | TP: {self.tp_pct}%")
         print(f"   📈 Trailing Stop: {'ON' if self.trailing_enabled else 'OFF'}")
         print(f"   💸 Funding Filter: {'ON' if self.funding_filter_enabled else 'OFF'}")
-        print(f"   🚫 Max Positions: {self.max_open_positions}")
+        print(f"   🚫 Max Symbols: {self.max_open_positions}")
+        print(f"   🚫 Max Orders/Symbol: {self.max_orders_per_symbol}")
+        print(f"   🚫 Max Total Orders: {self.max_total_orders}")
         print(f"   🎯 Min Confidence: {self.min_confidence*100}%")
         print(f"   ⚠️ ISOLATED margin ENFORCED")
+    
+    # ========== 0. POSITION LIMIT CHECK (v5.1) ==========
+    
+    async def _count_open_positions(self) -> int:
+        """
+        Подсчитать количество УНИКАЛЬНЫХ открытых позиций (по символам)
+        
+        ВАЖНО: На бирже позиции агрегируются по символу,
+        поэтому считаем уникальные символы, а не количество ордеров в БД!
+        """
+        try:
+            async with async_session() as session:
+                from sqlalchemy import func, distinct
+                result = await session.execute(
+                    select(func.count(distinct(Trade.symbol))).where(
+                        Trade.status == TradeStatus.OPEN,
+                        Trade.market_type == 'futures'
+                    )
+                )
+                unique_positions = result.scalar() or 0
+                return unique_positions
+        except Exception as e:
+            print(f"   ⚠️ Error counting positions: {e}")
+            return 0
+    
+    async def _count_orders_for_symbol(self, symbol: str) -> int:
+        """Подсчитать количество открытых ордеров для конкретного символа"""
+        try:
+            async with async_session() as session:
+                from sqlalchemy import func
+                result = await session.execute(
+                    select(func.count(Trade.id)).where(
+                        Trade.status == TradeStatus.OPEN,
+                        Trade.market_type == 'futures',
+                        Trade.symbol == symbol
+                    )
+                )
+                count = result.scalar() or 0
+                return count
+        except Exception as e:
+            print(f"   ⚠️ Error counting orders for {symbol}: {e}")
+            return 0
+    
+    async def _count_total_orders(self) -> int:
+        """Подсчитать общее количество открытых ордеров"""
+        try:
+            async with async_session() as session:
+                from sqlalchemy import func
+                result = await session.execute(
+                    select(func.count(Trade.id)).where(
+                        Trade.status == TradeStatus.OPEN,
+                        Trade.market_type == 'futures'
+                    )
+                )
+                count = result.scalar() or 0
+                return count
+        except Exception as e:
+            print(f"   ⚠️ Error counting total orders: {e}")
+            return 0
     
     # ========== 1. SETUP SYMBOL (Margin + Leverage) ==========
     
@@ -547,10 +610,10 @@ class FuturesExecutor(BaseExecutor):
                 error="Signal is SKIP"
             )
         
-        # ========== v5.0: ПРОВЕРКА ЛИМИТА ПОЗИЦИЙ ==========
-        open_count = len(self._current_positions)
+        # ========== v5.0: ПРОВЕРКА ЛИМИТА ПОЗИЦИЙ (по уникальным символам) ==========
+        open_count = await self._count_open_positions()
         if open_count >= self.max_open_positions:
-            print(f"   🚫 Position limit reached: {open_count}/{self.max_open_positions}")
+            print(f"   🚫 Position limit reached: {open_count}/{self.max_open_positions} unique symbols")
             return ExecutionResult(
                 success=False,
                 market_type=self.market_type,
@@ -604,6 +667,7 @@ class FuturesExecutor(BaseExecutor):
         """
         Открыть LONG с полной защитой
         
+        0. CHECK POSITION LIMIT (v5.1)
         1. CHECK FUNDING RATE (v4.0)
         2. Setup margin + leverage
         3. Get instrument info
@@ -613,6 +677,28 @@ class FuturesExecutor(BaseExecutor):
         7. SET TRAILING STOP (v4.0)
         """
         print(f"\n🟢 [FUTURES] Opening LONG {symbol} @ ${price:.2f}")
+        
+        # 0. CHECK POSITION LIMITS (v6.2)
+        # Проверка 1: Уникальные символы
+        open_symbols = await self._count_open_positions()
+        if open_symbols >= self.max_open_positions:
+            error_msg = f"❌ Symbol limit: {open_symbols}/{self.max_open_positions} symbols"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
+        
+        # Проверка 2: Ордеров на этот символ
+        symbol_orders = await self._count_orders_for_symbol(symbol)
+        if symbol_orders >= self.max_orders_per_symbol:
+            error_msg = f"❌ {symbol} limit: {symbol_orders}/{self.max_orders_per_symbol} orders"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
+        
+        # Проверка 3: Общее количество ордеров
+        total_orders = await self._count_total_orders()
+        if total_orders >= self.max_total_orders:
+            error_msg = f"❌ Total orders limit: {total_orders}/{self.max_total_orders}"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
         
         # 1. CHECK FUNDING RATE (v4.0)
         funding_ok, funding_reason = await self.check_funding_rate(symbol, "Buy")
@@ -757,6 +843,28 @@ class FuturesExecutor(BaseExecutor):
         7. SET TRAILING STOP (v4.0)
         """
         print(f"\n🔴 [FUTURES] Opening SHORT {symbol} @ ${price:.2f}")
+        
+        # 0. CHECK POSITION LIMITS (v6.2)
+        # Проверка 1: Уникальные символы
+        open_symbols = await self._count_open_positions()
+        if open_symbols >= self.max_open_positions:
+            error_msg = f"❌ Symbol limit: {open_symbols}/{self.max_open_positions} symbols"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
+        
+        # Проверка 2: Ордеров на этот символ
+        symbol_orders = await self._count_orders_for_symbol(symbol)
+        if symbol_orders >= self.max_orders_per_symbol:
+            error_msg = f"❌ {symbol} limit: {symbol_orders}/{self.max_orders_per_symbol} orders"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
+        
+        # Проверка 3: Общее количество ордеров
+        total_orders = await self._count_total_orders()
+        if total_orders >= self.max_total_orders:
+            error_msg = f"❌ Total orders limit: {total_orders}/{self.max_total_orders}"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
         
         # 1. CHECK FUNDING RATE (v4.0)
         funding_ok, funding_reason = await self.check_funding_rate(symbol, "Sell")
@@ -990,6 +1098,26 @@ class FuturesExecutor(BaseExecutor):
         print(f"✅ Closed {current_side} {symbol} @ ${price:.2f}")
         print(f"   💰 PnL: ${pnl:+.2f} ({pnl_pct_margin:+.1f}%)")
         print(f"   💸 Fees: ${total_fees:.4f} (entry: ${trade.fee_entry:.4f}, exit: ${exit_fee:.4f})")
+        
+        # ========== SELF-LEARNING: Обучение на результате ==========
+        if trade.ml_features:
+            try:
+                from core.self_learning import get_self_learner
+                learner = get_self_learner()
+                
+                # Определяем результат: 1 = Win (прибыль), 0 = Loss (убыток)
+                result = 1 if pnl > 0 else 0
+                
+                # Обучаем модель
+                success = learner.learn(trade.ml_features, result)
+                
+                if success:
+                    stats = learner.get_stats()
+                    print(f"   🧠 Self-Learning: Learned from {'WIN' if result == 1 else 'LOSS'}")
+                    print(f"      Samples: {stats['learned_samples']}, WR: {stats['win_rate']:.1f}%")
+            
+            except Exception as e:
+                print(f"   ⚠️ Self-learning error (ignored): {e}")
         print(f"   💵 Net PnL: ${net_pnl:+.2f}")
         
         # TELEGRAM NOTIFICATION

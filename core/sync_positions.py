@@ -77,10 +77,14 @@ class BybitSync:
             
             # Фильтруем только открытые (size > 0)
             exchange_positions = {}
+            exchange_symbols = set()  # Все символы с биржи (даже с size=0)
+            
             for pos in positions:
+                symbol = pos.get('symbol', '')
                 size = float(pos.get('size', 0))
+                exchange_symbols.add(symbol)
+                
                 if size > 0:
-                    symbol = pos.get('symbol', '')
                     side = 'BUY' if pos.get('side') == 'Buy' else 'SELL'
                     exchange_positions[symbol] = {
                         'side': side,
@@ -89,7 +93,7 @@ class BybitSync:
                         'leverage': pos.get('leverage', '1')
                     }
             
-            print(f"\n📊 Фьючерсные позиции на бирже: {len(exchange_positions)}")
+            print(f"\n📊 Фьючерсные позиции на бирже: {len(exchange_positions)} активных из {len(exchange_symbols)} символов")
             
             async with async_session() as session:
                 # Получаем открытые позиции из БД
@@ -106,15 +110,27 @@ class BybitSync:
                 closed = 0
                 added = 0
                 
-                # 1. Закрываем позиции в БД которых нет на бирже
+                # 1. Закрываем позиции в БД которых нет на бирже ИЛИ size=0
                 for trade in db_trades:
+                    # Если символа нет в активных позициях биржи
                     if trade.symbol not in exchange_positions:
-                        trade.status = 'CLOSED'
-                        trade.exit_time = datetime.utcnow()
-                        trade.exit_price = trade.entry_price  # Примерно
-                        trade.exit_reason = 'Sync: closed on exchange'
-                        print(f"   ❌ Закрыта в БД: {trade.symbol} (нет на бирже)")
-                        closed += 1
+                        # Проверяем: может символ есть но size=0?
+                        if trade.symbol in exchange_symbols:
+                            # Позиция закрыта на бирже (size=0)
+                            trade.status = 'CLOSED'
+                            trade.exit_time = datetime.utcnow()
+                            trade.exit_price = trade.entry_price
+                            trade.exit_reason = 'Sync: closed on exchange (size=0)'
+                            print(f"   ❌ Закрыта в БД: {trade.symbol} (size=0 на бирже)")
+                            closed += 1
+                        else:
+                            # Символа вообще нет - тоже закрываем
+                            trade.status = 'CLOSED'
+                            trade.exit_time = datetime.utcnow()
+                            trade.exit_price = trade.entry_price
+                            trade.exit_reason = 'Sync: not found on exchange'
+                            print(f"   ❌ Закрыта в БД: {trade.symbol} (не найдена на бирже)")
+                            closed += 1
                     else:
                         # Проверяем совпадение стороны
                         ex_pos = exchange_positions[trade.symbol]

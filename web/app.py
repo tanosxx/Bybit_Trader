@@ -385,11 +385,26 @@ def index_v1():
     return render_template('dashboard.html')
 
 async def get_futures_positions():
-    """Получить открытые фьючерсные позиции с Bybit API"""
+    """Получить открытые фьючерсные позиции с Bybit API + количество ордеров из БД"""
     try:
         from core.bybit_api import BybitAPI
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+        from config import settings
+        
         api = BybitAPI()
         positions = await api.get_positions()
+        
+        # Получаем количество ордеров из БД для каждого символа
+        engine = create_async_engine(settings.database_url, echo=False)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        
+        async with session_maker() as session:
+            orders_count_result = await session.execute(
+                select(Trade.symbol, Trade.side, func.count(Trade.id).label('count'))
+                .where(Trade.status == TradeStatus.OPEN, Trade.market_type == 'futures')
+                .group_by(Trade.symbol, Trade.side)
+            )
+            orders_count = {(row.symbol, row.side.value): row.count for row in orders_count_result}
         
         result = []
         for pos in positions:
@@ -421,6 +436,10 @@ async def get_futures_positions():
                 else:
                     pnl_pct = 0
                 
+                # Получаем количество ордеров из БД
+                side_str = 'BUY' if side == 'Buy' else 'SELL'
+                orders_in_db = orders_count.get((symbol, side_str), 1)
+                
                 result.append({
                     'symbol': symbol,
                     'side': 'LONG' if side == 'Buy' else 'SHORT',
@@ -429,7 +448,8 @@ async def get_futures_positions():
                     'mark_price': mark_price,
                     'leverage': leverage,
                     'unrealized_pnl': unrealized_pnl,
-                    'pnl_pct': pnl_pct
+                    'pnl_pct': pnl_pct,
+                    'orders_count': orders_in_db
                 })
         return result
     except Exception as e:
@@ -448,18 +468,14 @@ async def get_futures_virtual_balance():
     
     initial_balance = settings.futures_virtual_balance  # $100
     
-    # ФИЛЬТР: Только сделки с момента последнего деплоя (сегодня 16:00 UTC)
-    session_start = datetime(2025, 12, 2, 16, 0, 0)  # 2025-12-02 16:00:00 UTC
-    
     TAKER_FEE_PCT = 0.055  # 0.055% Bybit taker fee
     
     async with session_maker() as session:
-        # Получаем все закрытые сделки
+        # Получаем ВСЕ закрытые сделки (без фильтра по дате)
         trades_result = await session.execute(
             select(Trade).where(
                 Trade.status == TradeStatus.CLOSED,
-                Trade.market_type == 'futures',
-                Trade.entry_time >= session_start
+                Trade.market_type == 'futures'
             )
         )
         closed_trades = trades_result.scalars().all()
@@ -473,31 +489,20 @@ async def get_futures_virtual_balance():
         )
         open_positions = open_result.scalar() or 0
     
-    # Рассчитываем PnL и комиссии
+    # Рассчитываем PnL и комиссии ТОЛЬКО из БД
     realized_pnl = 0.0
     total_fees = 0.0
-    trading_fees = 0.0
     
     for trade in closed_trades:
         # PnL
         realized_pnl += float(trade.pnl or 0)
         
-        # Комиссии
+        # Комиссии - берем только записанные в БД
         entry_fee = float(trade.fee_entry or 0)
         exit_fee = float(trade.fee_exit or 0)
-        
-        # Если комиссии не записаны, рассчитываем
-        if entry_fee == 0:
-            entry_value = trade.entry_price * trade.quantity
-            entry_fee = entry_value * (TAKER_FEE_PCT / 100)
-        
-        if exit_fee == 0 and trade.exit_price:
-            exit_value = trade.exit_price * trade.quantity
-            exit_fee = exit_value * (TAKER_FEE_PCT / 100)
-        
-        trading_fees += (entry_fee + exit_fee)
+        total_fees += (entry_fee + exit_fee)
     
-    total_fees = trading_fees
+    trading_fees = total_fees
     
     # Итоговый баланс с учётом комиссий
     current_balance = initial_balance + realized_pnl - total_fees
@@ -515,8 +520,7 @@ async def get_futures_virtual_balance():
         'total_trades': len(closed_trades),
         'open_positions': open_positions,
         'leverage': settings.futures_leverage,
-        'risk_per_trade': settings.futures_risk_per_trade * 100,
-        'session_start': session_start.strftime('%Y-%m-%d %H:%M:%S')
+        'risk_per_trade': settings.futures_risk_per_trade * 100
     }
 
 @app.route('/api/futures/positions')
@@ -537,6 +541,17 @@ def get_futures_trades_api():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/ml/status')
+def get_ml_status_api():
+    """API для получения статуса Self-Learning модели"""
+    try:
+        from core.self_learning import get_self_learner
+        learner = get_self_learner()
+        stats = learner.get_stats()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e), 'enabled': False}), 500
+
 @app.route('/api/data')
 def get_data():
     """API для получения всех данных"""
@@ -555,6 +570,14 @@ def get_data():
             spot_trades = await get_recent_trades(limit=20, market_type='spot')
             futures_trades = await get_recent_trades(limit=20, market_type='futures')
             
+            # Self-Learning статус
+            try:
+                from core.self_learning import get_self_learner
+                learner = get_self_learner()
+                ml_status = learner.get_stats()
+            except Exception as e:
+                ml_status = {'enabled': False, 'error': str(e)}
+            
             return {
                 'balance': balance_data,
                 'stats': stats,
@@ -566,6 +589,7 @@ def get_data():
                 'futures_balance': futures_balance,
                 'balance_history': balance_history,
                 'logs': logs,
+                'ml_status': ml_status,
                 'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             }
         
