@@ -1,17 +1,29 @@
 """
 AI Brain для анализа крипто рынков
 Поддержка: Gemini (FREE tier) + OpenRouter (Claude/GPT)
+
+v3.0: Gatekeeper система с двухуровневой фильтрацией:
+- CHOP фильтр (отсекает боковик)
+- Pattern Matcher (отсекает паттерны с плохой историей)
 """
 import aiohttp
 import json
-from typing import Dict, Optional
+import numpy as np
+import time
+from typing import Dict, List, Optional
 from config import settings, GEMINI_CRYPTO_ANALYSIS_PROMPT, OPENROUTER_CRYPTO_ANALYSIS_PROMPT
+from core.ta_lib import get_choppiness_index
+from core.scenario_tester import get_scenario_tester
 
 
 class AIBrain:
-    """AI анализ крипто рынков с ротацией ключей и моделей"""
+    """
+    AI анализ крипто рынков с ротацией ключей и моделей
     
-    def __init__(self):
+    v3.0: Gatekeeper система - двухуровневая фильтрация входов
+    """
+    
+    def __init__(self, api_client=None):
         # Несколько Gemini API ключей для ротации (из .env)
         self.google_api_keys = [
             settings.google_api_key_1,  # Ключ 1
@@ -37,6 +49,24 @@ class AIBrain:
         # OpenRouter (не используем, но оставляем на случай)
         self.openrouter_api_key = settings.openrouter_api_key
         self.openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        # ========== GATEKEEPER v3.0 ==========
+        # ScenarioTester для Pattern Matching
+        self.scenario_tester = None
+        if api_client:
+            try:
+                self.scenario_tester = get_scenario_tester(api_client)
+                print("🔍 Gatekeeper: ScenarioTester initialized")
+            except Exception as e:
+                print(f"⚠️ Gatekeeper: ScenarioTester init failed: {e}")
+        
+        # Пороги фильтрации
+        self.chop_threshold = 60.0  # CHOP > 60 = флэт
+        self.historical_wr_threshold = 40.0  # Historical WR < 40% = плохой паттерн
+        
+        print(f"🚦 Gatekeeper v3.0 enabled:")
+        print(f"   CHOP threshold: {self.chop_threshold}")
+        print(f"   Historical WR threshold: {self.historical_wr_threshold}%")
     
     async def _call_gemini(self, market_data: Dict) -> Optional[Dict]:
         """
@@ -197,9 +227,123 @@ class AIBrain:
             print(f"❌ OpenRouter API error: {e}")
             return None
     
+    async def decide_trade(self, market_data: Dict, klines: List[Dict], news_sentiment: str = "NEUTRAL") -> Optional[Dict]:
+        """
+        Принять решение о сделке с Gatekeeper фильтрацией
+        
+        v3.0: Двухуровневая фильтрация:
+        1. CHOP Check - отсекаем боковик
+        2. Pattern Check - отсекаем паттерны с плохой историей
+        
+        Args:
+            market_data: данные рынка (RSI, MACD, etc)
+            klines: исторические свечи для CHOP и Pattern Matching
+            news_sentiment: "EXTREME" игнорирует CHOP фильтр
+        
+        Returns:
+            {
+                "decision": "BUY/SELL/SKIP",
+                "risk_score": 1-10,
+                "confidence": 0.0-1.0,
+                "reasoning": "...",
+                "key_factors": [...],
+                "gatekeeper": {
+                    "chop": float,
+                    "historical_wr": float,
+                    "passed": bool
+                }
+            }
+        """
+        symbol = market_data.get('symbol', '')
+        signal = market_data.get('signal', 'SKIP')
+        
+        # ========== GATEKEEPER LEVEL 1: CHOP CHECK ==========
+        try:
+            # Извлекаем данные для CHOP
+            if len(klines) >= 15:
+                high = np.array([float(k['high']) for k in klines])
+                low = np.array([float(k['low']) for k in klines])
+                close = np.array([float(k['close']) for k in klines])
+                
+                chop = get_choppiness_index(high, low, close, period=14)
+                
+                # Проверка: CHOP > 60 И новости не EXTREME
+                if chop > self.chop_threshold and news_sentiment != "EXTREME":
+                    print(f"🚫 Gatekeeper: {symbol} SKIP - Choppy Market (CHOP: {chop:.1f})")
+                    return {
+                        "decision": "SKIP",
+                        "risk_score": 10,
+                        "confidence": 0.0,
+                        "reasoning": f"Choppy Market detected (CHOP: {chop:.1f} > {self.chop_threshold})",
+                        "key_factors": ["Sideways market", "High noise", "False signals likely"],
+                        "gatekeeper": {
+                            "chop": chop,
+                            "historical_wr": None,
+                            "passed": False,
+                            "reason": "CHOP_FILTER"
+                        }
+                    }
+            else:
+                chop = 50.0  # Neutral если недостаточно данных
+        
+        except Exception as e:
+            print(f"⚠️ CHOP calculation error: {e}")
+            chop = 50.0  # Neutral при ошибке
+        
+        # ========== GATEKEEPER LEVEL 2: PATTERN CHECK ==========
+        historical_wr = 50.0  # Default neutral
+        
+        if self.scenario_tester and signal in ['BUY', 'SELL']:
+            try:
+                # Lazy Loading: обновляем историю если нужно
+                await self.scenario_tester.update_history(symbol)
+                
+                # Анализируем исторические паттерны
+                historical_wr = self.scenario_tester.analyze_outcome(symbol, signal)
+                
+                # Проверка: Historical WR < 40%
+                if historical_wr < self.historical_wr_threshold:
+                    print(f"🚫 Gatekeeper: {symbol} SKIP - Bad Historical Pattern (WR: {historical_wr:.1f}%)")
+                    return {
+                        "decision": "SKIP",
+                        "risk_score": 8,
+                        "confidence": 0.0,
+                        "reasoning": f"Bad Historical Pattern (Win Rate: {historical_wr:.1f}% < {self.historical_wr_threshold}%)",
+                        "key_factors": ["Similar patterns failed in past", "Low probability setup"],
+                        "gatekeeper": {
+                            "chop": chop,
+                            "historical_wr": historical_wr,
+                            "passed": False,
+                            "reason": "PATTERN_FILTER"
+                        }
+                    }
+            
+            except Exception as e:
+                print(f"⚠️ Pattern analysis error: {e}")
+                historical_wr = 50.0  # Neutral при ошибке
+        
+        # ========== GATEKEEPER PASSED - Анализируем через AI ==========
+        print(f"✅ Gatekeeper: {symbol} PASSED (CHOP: {chop:.1f}, Historical WR: {historical_wr:.1f}%)")
+        
+        # Пробуем Gemini с ротацией ключей и моделей
+        result = await self._call_gemini(market_data)
+        
+        if result:
+            # Добавляем Gatekeeper метрики
+            result['gatekeeper'] = {
+                "chop": chop,
+                "historical_wr": historical_wr,
+                "passed": True,
+                "reason": "ALL_CHECKS_PASSED"
+            }
+            return result
+        
+        print("❌ Gemini не ответил, пропускаем сделку")
+        return None
+    
     async def analyze_market(self, market_data: Dict, use_gemini: bool = True) -> Optional[Dict]:
         """
-        Анализ рынка через AI
+        Анализ рынка через AI (legacy метод, используй decide_trade)
         
         Args:
             market_data: {
@@ -236,9 +380,9 @@ class AIBrain:
 # Singleton
 _ai_brain = None
 
-def get_ai_brain() -> AIBrain:
+def get_ai_brain(api_client=None) -> AIBrain:
     """Получить singleton instance"""
     global _ai_brain
     if _ai_brain is None:
-        _ai_brain = AIBrain()
+        _ai_brain = AIBrain(api_client)
     return _ai_brain

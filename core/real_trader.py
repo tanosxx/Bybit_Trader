@@ -30,7 +30,7 @@ class RealTrader:
     def __init__(self):
         self.bybit_api = get_bybit_api()
         self.ml_predictor = get_ml_predictor()
-        self.ai_brain = get_local_brain()  # Используем Local Brain (автономный)
+        self.ai_brain = get_local_brain(api_client=self.bybit_api)  # Передаём API для Gatekeeper
         self.initial_balance = settings.initial_balance
         self.ml_enabled = False
     

@@ -29,7 +29,7 @@ class TradingLoop:
     def __init__(self):
         self.bybit_api = get_bybit_api()
         self.technical_analyzer = get_technical_analyzer()
-        self.ai_brain = get_local_brain()  # Используем Local Brain (автономный)
+        self.ai_brain = get_local_brain(api_client=self.bybit_api)  # Передаём API для Gatekeeper
         self.trader = get_real_trader()  # РЕАЛЬНЫЙ ТРЕЙДЕР! 🚀
         self.data_collector = get_data_collector()
         self.ml_predictor = get_ml_predictor()  # LSTM модель

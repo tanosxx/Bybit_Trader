@@ -8,6 +8,7 @@ Technical Analysis Library v2.0
 - Trailing Stop Loss
 - Risk/Reward оптимизация
 - Корреляция позиций
+- Choppiness Index (CHOP) - фильтр флэта
 """
 import numpy as np
 import pandas as pd
@@ -357,3 +358,62 @@ def get_portfolio_risk_manager(config: Dict = None) -> PortfolioRiskManager:
     if _portfolio_risk_manager is None:
         _portfolio_risk_manager = PortfolioRiskManager(config)
     return _portfolio_risk_manager
+
+
+# ========== CHOPPINESS INDEX (CHOP) - Фильтр Флэта ==========
+
+def get_choppiness_index(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> float:
+    """
+    Рассчитать Choppiness Index (CHOP)
+    
+    CHOP показывает насколько рынок "choppy" (боковой/пилообразный):
+    - CHOP > 61.8: Рынок во флэте (боковик) - сигналы RSI/MACD ложные
+    - CHOP < 38.2: Сильный тренд - можно торговать
+    - 38.2 < CHOP < 61.8: Переходная зона
+    
+    Формула: 100 * LOG10(SUM(ATR) / (MAX(High) - MIN(Low))) / LOG10(period)
+    
+    Args:
+        high: массив максимальных цен
+        low: массив минимальных цен
+        close: массив цен закрытия
+        period: период расчёта (по умолчанию 14)
+    
+    Returns:
+        float: значение CHOP (0-100)
+    """
+    if len(high) < period + 1 or len(low) < period + 1 or len(close) < period + 1:
+        return 50.0  # Neutral если недостаточно данных
+    
+    try:
+        # Берём последние period+1 свечей (нужна предыдущая для TR)
+        high = high[-(period + 1):]
+        low = low[-(period + 1):]
+        close = close[-(period + 1):]
+        
+        # Рассчитываем True Range (TR)
+        tr1 = high[1:] - low[1:]  # High - Low
+        tr2 = np.abs(high[1:] - close[:-1])  # |High - Previous Close|
+        tr3 = np.abs(low[1:] - close[:-1])  # |Low - Previous Close|
+        
+        # True Range = max(tr1, tr2, tr3)
+        tr = np.maximum(np.maximum(tr1, tr2), tr3)
+        
+        # Сумма ATR за period
+        atr_sum = np.sum(tr)
+        
+        # Диапазон High-Low за period
+        high_low_range = np.max(high[1:]) - np.min(low[1:])
+        
+        # Защита от деления на ноль
+        if high_low_range == 0 or atr_sum == 0:
+            return 50.0
+        
+        # CHOP формула
+        chop = 100 * np.log10(atr_sum / high_low_range) / np.log10(period)
+        
+        return float(np.clip(chop, 0, 100))  # Ограничиваем 0-100
+    
+    except Exception as e:
+        print(f"⚠️ CHOP calculation error: {e}")
+        return 50.0  # Neutral при ошибке

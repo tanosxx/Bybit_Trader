@@ -7,14 +7,18 @@ Local AI Brain - Полностью автономный мозг без вне�
 2. ML Service (RandomForest/XGBoost) -> Signal Generation
 3. Technical Analysis -> Confirmation
 4. Decision Tree -> Final Decision
+
+v3.0: Gatekeeper система - двухуровневая фильтрация входов
 """
 import asyncio
+import numpy as np
 from datetime import datetime
 from typing import Dict, Optional
 from enum import Enum
 
 from core.news_brain import get_news_brain, MarketSentiment
 from core.ml_predictor_v2 import get_ml_predictor_v2  # Используем существующую LSTM модель!
+from core.ta_lib import get_choppiness_index
 
 # Online Learning (опционально - graceful degradation)
 try:
@@ -23,6 +27,14 @@ try:
 except ImportError:
     SELF_LEARNING_AVAILABLE = False
     print("⚠️ Self-learning module not available")
+
+# Scenario Tester (опционально - graceful degradation)
+try:
+    from core.scenario_tester import get_scenario_tester
+    SCENARIO_TESTER_AVAILABLE = True
+except ImportError:
+    SCENARIO_TESTER_AVAILABLE = False
+    print("⚠️ Scenario tester not available")
 
 
 class DecisionSource(Enum):
@@ -54,7 +66,7 @@ class LocalBrain:
     4. Final Decision
     """
     
-    def __init__(self):
+    def __init__(self, api_client=None):
         self.news_brain = get_news_brain()
         self.ml_predictor = get_ml_predictor_v2()  # LSTM модель v2
         self.ml_loaded = False
@@ -67,6 +79,24 @@ class LocalBrain:
             except Exception as e:
                 print(f"⚠️ Self-learner init failed: {e}")
                 self.self_learner = None
+        
+        # ========== GATEKEEPER v3.0 ==========
+        self.scenario_tester = None
+        if SCENARIO_TESTER_AVAILABLE and api_client:
+            try:
+                self.scenario_tester = get_scenario_tester(api_client)
+                print("🔍 Gatekeeper: ScenarioTester initialized")
+            except Exception as e:
+                print(f"⚠️ Gatekeeper: ScenarioTester init failed: {e}")
+        
+        # Пороги фильтрации
+        self.chop_threshold = 60.0  # CHOP > 60 = флэт
+        self.historical_wr_threshold = 40.0  # Historical WR < 40% = плохой паттерн
+        
+        if SCENARIO_TESTER_AVAILABLE:
+            print(f"🚦 Gatekeeper v3.0 enabled:")
+            print(f"   CHOP threshold: {self.chop_threshold}")
+            print(f"   Historical WR threshold: {self.historical_wr_threshold}%")
         
         # Конфигурация - OPTIMIZED v2.2 (24/7 trading)
         self.config = {
@@ -425,6 +455,36 @@ class LocalBrain:
                 'ta_confirmation': None
             }
         
+        # ========== GATEKEEPER LEVEL 1: CHOP CHECK ==========
+        chop = 50.0  # Default neutral
+        try:
+            klines = market_data.get('klines', [])
+            if len(klines) >= 15:
+                high = np.array([float(k['high']) for k in klines])
+                low = np.array([float(k['low']) for k in klines])
+                close = np.array([float(k['close']) for k in klines])
+                
+                chop = get_choppiness_index(high, low, close, period=14)
+                
+                # Проверка: CHOP > 60 (флэт/боковик)
+                if chop > self.chop_threshold:
+                    print(f"   🚫 Gatekeeper: Choppy Market (CHOP: {chop:.1f} > {self.chop_threshold})")
+                    self.stats['skips'] += 1
+                    return {
+                        'decision': 'SKIP',
+                        'confidence': 0.0,
+                        'risk_score': 8,
+                        'source': DecisionSource.SAFETY_MODE.value,
+                        'reasoning': f'Choppy Market (CHOP: {chop:.1f})',
+                        'position_size_multiplier': 0.0,
+                        'news_sentiment': MarketSentiment.NEUTRAL.value,
+                        'ml_signal': None,
+                        'ta_confirmation': None,
+                        'gatekeeper': {'chop': chop, 'reason': 'CHOP_FILTER'}
+                    }
+        except Exception as e:
+            print(f"   ⚠️ CHOP calculation error: {e}")
+        
         # ========== ШАГ 1: NEWS RISK CHECK ==========
         news_data = await self._check_news_risk(symbol)
         sentiment = news_data['sentiment']
@@ -483,6 +543,39 @@ class LocalBrain:
                 'ml_signal': ml_result,
                 'ta_confirmation': None
             }
+        
+        # ========== GATEKEEPER LEVEL 2: PATTERN CHECK ==========
+        historical_wr = 50.0  # Default neutral
+        
+        if self.scenario_tester and ml_decision in ['BUY', 'SELL']:
+            try:
+                # Lazy Loading: обновляем историю если нужно
+                await self.scenario_tester.update_history(symbol)
+                
+                # Анализируем исторические паттерны
+                historical_wr = self.scenario_tester.analyze_outcome(symbol, ml_decision)
+                
+                # Проверка: Historical WR < 40%
+                if historical_wr < self.historical_wr_threshold:
+                    print(f"   🚫 Gatekeeper: Bad Historical Pattern (WR: {historical_wr:.1f}%)")
+                    self.stats['skips'] += 1
+                    return {
+                        'decision': 'SKIP',
+                        'confidence': 0.0,
+                        'risk_score': 7,
+                        'source': DecisionSource.SAFETY_MODE.value,
+                        'reasoning': f'Bad Historical Pattern (WR: {historical_wr:.1f}%)',
+                        'position_size_multiplier': 0.0,
+                        'news_sentiment': sentiment.value,
+                        'ml_signal': ml_result,
+                        'ta_confirmation': None,
+                        'gatekeeper': {'chop': chop, 'historical_wr': historical_wr, 'reason': 'PATTERN_FILTER'}
+                    }
+                else:
+                    print(f"   ✅ Gatekeeper: PASSED (CHOP: {chop:.1f}, Historical WR: {historical_wr:.1f}%)")
+            
+            except Exception as e:
+                print(f"   ⚠️ Pattern analysis error: {e}")
         
         # ========== ШАГ 3: TA CONFIRMATION ==========
         ta_data = self._check_ta_confirmation(ml_decision, market_data)
@@ -620,9 +713,9 @@ class LocalBrain:
 # Singleton
 _local_brain = None
 
-def get_local_brain() -> LocalBrain:
+def get_local_brain(api_client=None) -> LocalBrain:
     """Получить singleton instance"""
     global _local_brain
     if _local_brain is None:
-        _local_brain = LocalBrain()
+        _local_brain = LocalBrain(api_client)
     return _local_brain

@@ -38,7 +38,7 @@ class HybridTradingLoop:
     def __init__(self):
         self.api = get_bybit_api()
         self.technical_analyzer = get_technical_analyzer()
-        self.ai_brain = get_local_brain()
+        self.ai_brain = get_local_brain(api_client=self.api)  # Передаём API для Gatekeeper
         self.telegram = get_telegram_notifier()
         self.risk_manager = get_dynamic_risk_manager()
         self.portfolio_manager = get_portfolio_risk_manager()
@@ -424,6 +424,12 @@ class HybridTradingLoop:
         print("="*80)
         
         await init_db()
+        
+        # ========== GATEKEEPER: Загрузка истории для ScenarioTester ==========
+        if self.ai_brain.scenario_tester:
+            print(f"\n🔍 Gatekeeper: Loading historical data...")
+            all_symbols = list(set(get_spot_pairs() + get_futures_pairs()))
+            asyncio.create_task(self.ai_brain.scenario_tester.load_initial_history(all_symbols))
         
         print(f"\n⚙️ Configuration:")
         print(f"   Trading Mode: {settings.trading_mode}")
