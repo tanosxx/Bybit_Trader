@@ -544,11 +544,41 @@ def get_futures_trades_api():
 def get_ml_status_api():
     """API для получения статуса Self-Learning модели"""
     try:
-        from core.self_learning import SelfLearner
-        # Создаем новый экземпляр чтобы загрузить свежую модель
-        learner = SelfLearner()
-        stats = learner.get_stats()
-        return jsonify(stats)
+        import pickle
+        import os
+        
+        model_path = 'ml_data/self_learner.pkl'
+        
+        # Читаем файл напрямую без загрузки модели River
+        if os.path.exists(model_path):
+            with open(model_path, 'rb') as f:
+                data = pickle.load(f)
+            
+            learning_count = data.get('learning_count', 0)
+            wins = data.get('wins', 0)
+            losses = data.get('losses', 0)
+            predictions_count = data.get('predictions_count', 0)
+            
+            # Рассчитываем метрики
+            win_rate = (wins / learning_count * 100) if learning_count > 0 else 0.0
+            
+            # Accuracy из метрики
+            metric = data.get('metric')
+            accuracy = metric.get() if metric else 0.0
+            
+            return jsonify({
+                'enabled': True,
+                'learned_samples': learning_count,
+                'wins': wins,
+                'losses': losses,
+                'win_rate': win_rate,
+                'model_accuracy': accuracy,
+                'predictions': predictions_count,
+                'ready': learning_count >= 50
+            })
+        else:
+            return jsonify({'enabled': False, 'error': 'Model file not found'}), 404
+    
     except Exception as e:
         return jsonify({'error': str(e), 'enabled': False}), 500
 
