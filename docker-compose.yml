@@ -51,6 +51,8 @@ services:
       - GOOGLE_API_KEY_1=${GOOGLE_API_KEY_1}
       - GOOGLE_API_KEY_2=${GOOGLE_API_KEY_2}
       - GOOGLE_API_KEY_3=${GOOGLE_API_KEY_3}
+    volumes:
+      - ./ml_data:/app/ml_data
     networks:
       - bybit_network
     restart: unless-stopped

@@ -69,9 +69,9 @@ class Settings(BaseSettings):
     funding_time_window_minutes: int = 60  # Окно до выплаты (минуты)
     
     # ========== POSITION LIMITS v6.2 (SAFE TRADING) ==========
-    futures_max_open_positions: int = 5  # Макс. уникальных символов (безопасно для $100)
+    futures_max_open_positions: int = 7  # Макс. уникальных символов (увеличено для активности)
     futures_max_orders_per_symbol: int = 15  # Макс. ордеров на один символ (защита от переусреднения)
-    futures_max_total_orders: int = 60  # Макс. всего ордеров (общий лимит)
+    futures_max_total_orders: int = 80  # Макс. всего ордеров (общий лимит)
     futures_min_confidence: float = 0.50  # Мин. confidence для входа (50%)
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
     
