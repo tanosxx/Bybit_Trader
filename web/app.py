@@ -544,8 +544,9 @@ def get_futures_trades_api():
 def get_ml_status_api():
     """API для получения статуса Self-Learning модели"""
     try:
-        from core.self_learning import get_self_learner
-        learner = get_self_learner()
+        from core.self_learning import SelfLearner
+        # Создаем новый экземпляр чтобы загрузить свежую модель
+        learner = SelfLearner()
         stats = learner.get_stats()
         return jsonify(stats)
     except Exception as e:
