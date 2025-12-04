@@ -47,38 +47,40 @@ class Settings(BaseSettings):
     spot_virtual_balance: float = 100.0  # Виртуальный лимит для SPOT
     spot_risk_per_trade: float = 0.10  # 10% от баланса на сделку
     
-    # ========== FUTURES Settings ==========
+    # ========== FUTURES Settings - SMART GROWTH $100 ==========
     # КРИТИЧНО: Бот использует ТОЛЬКО этот баланс для расчёта позиций!
-    futures_virtual_balance: float = 50.0  # $50 виртуальный стартовый капитал
-    futures_leverage: int = 5  # Плечо (рекомендую 3-5x для начала)
-    futures_risk_per_trade: float = 0.20  # 20% от виртуального баланса (агрессивно!)
-    futures_margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'
+    futures_virtual_balance: float = 100.0  # $100 стартовый капитал (Smart Growth)
+    futures_leverage: int = 5  # Плечо 5x (Buying Power $500 - безопасно)
+    futures_risk_per_trade: float = 0.12  # 12% от баланса в маржу = $12 (позиция $60 с плечом)
+    futures_margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'  # Изолированная маржа
     
     # Legacy (для совместимости)
     leverage: int = 5
     margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'
     
-    # ========== TRAILING STOP Settings ==========
+    # ========== TRAILING STOP Settings - SMART GROWTH $100 ==========
     trailing_stop_enabled: bool = True  # Включить трейлинг-стоп
-    trailing_activation_pct: float = 1.0  # Активация при +1% профита
-    trailing_callback_pct: float = 0.5  # Дистанция трейлинга 0.5%
+    trailing_activation_pct: float = 0.8  # Активация при +0.8% профита (быстрый безубыток)
+    trailing_callback_pct: float = 0.4  # Дистанция трейлинга 0.4% (фиксируем прибыль)
     
     # ========== FUNDING RATE Filter ==========
     funding_rate_filter_enabled: bool = True  # Проверять funding rate
     funding_rate_max_pct: float = 0.05  # Макс. ставка 0.05% для входа
     funding_time_window_minutes: int = 60  # Окно до выплаты (минуты)
     
-    # ========== POSITION LIMITS v6.2 (SAFE TRADING) ==========
-    futures_max_open_positions: int = 7  # Макс. уникальных символов (увеличено для активности)
-    futures_max_orders_per_symbol: int = 15  # Макс. ордеров на один символ (защита от переусреднения)
-    futures_max_total_orders: int = 80  # Макс. всего ордеров (общий лимит)
-    futures_min_confidence: float = 0.50  # Мин. confidence для входа (50%)
+    # ========== POSITION LIMITS - SMART GROWTH $100 ==========
+    futures_max_open_positions: int = 5  # Макс. 5 позиций (5 × $12 = $60 маржи, $40 буфер)
+    futures_max_orders_per_symbol: int = 15  # Макс. ордеров на один символ
+    futures_max_total_orders: int = 80  # Макс. всего ордеров
+    futures_min_confidence: float = 0.60  # Мин. confidence 60% для LONG
+    futures_min_confidence_short: float = 0.60  # Мин. confidence 60% для SHORT (равно LONG)
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
     
-    # ========== SIMULATED REALISM (Fees & Spreads) ==========
+    # ========== SIMULATED REALISM - SMART GROWTH $100 ==========
     # Реалистичный учёт комиссий для подготовки к Real Trading
     estimated_fee_rate: float = 0.0006  # 0.06% Taker fee (Bybit standard)
     min_profit_threshold_multiplier: float = 2.0  # Минимальный профит = 2x комиссия
+    min_profit_threshold_pct: float = 0.6  # Минимальный TP 0.6% (комиссия + проскальзывание + микро-профит)
     simulate_fees_in_demo: bool = True  # Учитывать комиссии в Demo режиме
     
     # ========== TRADING HOURS FILTER ==========

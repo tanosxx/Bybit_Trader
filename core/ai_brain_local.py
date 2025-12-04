@@ -89,9 +89,14 @@ class LocalBrain:
             except Exception as e:
                 print(f"⚠️ Gatekeeper: ScenarioTester init failed: {e}")
         
-        # Пороги фильтрации (BALANCED v3.0)
-        self.chop_threshold = 60.0  # CHOP > 60 = флэт
-        self.historical_wr_threshold = 30.0  # Historical WR < 30% = плохой паттерн (снижено с 40%)
+        # Пороги фильтрации (SMART GROWTH $100 - строгие фильтры)
+        self.chop_threshold = 60.0  # CHOP > 60 = флэт (строго - не торгуем шум)
+        self.historical_wr_threshold = 25.0  # Historical WR < 25% = плохой паттерн
+        
+        # Минимальные confidence для входа (из config)
+        from config import settings
+        self.min_confidence_long = settings.futures_min_confidence  # 60% для LONG
+        self.min_confidence_short = settings.futures_min_confidence_short  # 65% для SHORT
         
         if SCENARIO_TESTER_AVAILABLE:
             print(f"🚦 Gatekeeper v3.0 enabled:")
@@ -527,9 +532,12 @@ class LocalBrain:
             ml_decision = 'HOLD'
             ml_confidence *= 0.5
         
-        # Фильтр уверенности
-        if ml_confidence < self.config['min_ml_confidence'] and ml_decision != 'HOLD':
-            print(f"   ⚠️  ML confidence too low ({ml_confidence:.0%} < {self.config['min_ml_confidence']:.0%})")
+        # Фильтр уверенности (SMART GROWTH $100 - разные пороги для LONG/SHORT)
+        min_conf_required = self.min_confidence_long if ml_decision == 'BUY' else self.min_confidence_short
+        
+        if ml_confidence < min_conf_required and ml_decision != 'HOLD':
+            action_type = "LONG" if ml_decision == 'BUY' else "SHORT"
+            print(f"   ⚠️  ML confidence too low for {action_type} ({ml_confidence:.0%} < {min_conf_required:.0%})")
             self.stats['skips'] += 1
             
             return {
@@ -537,7 +545,7 @@ class LocalBrain:
                 'confidence': ml_confidence,
                 'risk_score': 7,
                 'source': DecisionSource.SAFETY_MODE.value,
-                'reasoning': f'ML confidence too low: {ml_confidence:.0%}',
+                'reasoning': f'ML confidence too low for {action_type}: {ml_confidence:.0%} < {min_conf_required:.0%}',
                 'position_size_multiplier': 0.0,
                 'news_sentiment': sentiment.value,
                 'ml_signal': ml_result,
@@ -555,8 +563,9 @@ class LocalBrain:
                 # Анализируем исторические паттерны
                 historical_wr = self.scenario_tester.analyze_outcome(symbol, ml_decision)
                 
-                # Проверка: Historical WR < 40%
-                if historical_wr < self.historical_wr_threshold:
+                # Проверка: Historical WR < 25% (с исключением для сильных ML сигналов)
+                # ИСКЛЮЧЕНИЕ: Если ML уверен (>60%), пропускаем даже с плохим WR
+                if historical_wr < self.historical_wr_threshold and ml_confidence < 0.60:
                     print(f"   🚫 Gatekeeper: Bad Historical Pattern (WR: {historical_wr:.1f}%)")
                     self.stats['skips'] += 1
                     return {
@@ -571,6 +580,8 @@ class LocalBrain:
                         'ta_confirmation': None,
                         'gatekeeper': {'chop': chop, 'historical_wr': historical_wr, 'reason': 'PATTERN_FILTER'}
                     }
+                elif historical_wr < self.historical_wr_threshold and ml_confidence >= 0.60:
+                    print(f"   ⚠️  Gatekeeper: Bad Pattern (WR: {historical_wr:.1f}%) BUT Strong ML (conf: {ml_confidence:.0%}) - OVERRIDE")
                 else:
                     print(f"   ✅ Gatekeeper: PASSED (CHOP: {chop:.1f}, Historical WR: {historical_wr:.1f}%)")
             
@@ -617,16 +628,17 @@ class LocalBrain:
         # Корректируем уверенность на основе TA + Self-Learning
         final_confidence = ml_confidence
         
-        # TA влияние
+        # TA влияние (СМЯГЧЕНО - не убиваем confidence)
         if ta_data['confirms']:
-            final_confidence = min(0.95, ml_confidence * 1.15)  # Boost (увеличено)
+            final_confidence = min(0.95, ml_confidence * 1.15)  # Boost +15%
         else:
-            final_confidence = ml_confidence * 0.75  # Reduce (ужесточено)
+            final_confidence = ml_confidence * 0.90  # Reduce только -10% (было -25%)
         
-        # Self-Learning влияние (20% веса, если модель обучена)
+        # Self-Learning влияние (5% веса, если модель обучена)
+        # СНИЖЕНО с 20% до 5% - Self-Learning не должен убивать сигналы
         if self.self_learner and self.self_learner.learning_count >= 50:
-            # Взвешивание: 80% Static ML + 20% Self-Learning
-            final_confidence = (final_confidence * 0.8) + (self_learning_score * 0.2)
+            # Взвешивание: 95% Static ML + 5% Self-Learning
+            final_confidence = (final_confidence * 0.95) + (self_learning_score * 0.05)
         
         # ========== TA CONFIRMATION (опционально) ==========
         # Если TA не подтверждает - уменьшаем размер позиции вместо SKIP
@@ -635,8 +647,8 @@ class LocalBrain:
                 print(f"   ⚠️  TA does not confirm {ml_decision} - reducing position size")
                 # Не блокируем, но уменьшаем размер
         
-        # ========== ШАГ 4: FEE PROFITABILITY CHECK ==========
-        # Проверяем, окупит ли сделка комиссии
+        # ========== ШАГ 4: FEE PROFITABILITY CHECK (SMART GROWTH $100) ==========
+        # Проверяем, окупит ли сделка комиссии + минимальный TP 0.6%
         from config import settings, is_trade_profitable_after_fees
         
         if settings.simulate_fees_in_demo and ml_decision in ['BUY', 'SELL']:
@@ -650,7 +662,27 @@ class LocalBrain:
                 else:  # SELL
                     take_profit = current_price * (1 - abs(change_pct) / 100)
                 
-                # Проверяем прибыльность (используем условное количество)
+                # ПРОВЕРКА 1: Минимальный TP 0.6% (комиссия + проскальзывание + микро-профит)
+                tp_pct = abs(change_pct)
+                min_tp_pct = settings.min_profit_threshold_pct  # 0.6%
+                
+                if tp_pct < min_tp_pct:
+                    print(f"   ⚠️  Trade blocked: TP too small ({tp_pct:.2f}% < {min_tp_pct:.2f}%)")
+                    self.stats['skips'] += 1
+                    
+                    return {
+                        'decision': 'SKIP',
+                        'confidence': 0.0,
+                        'risk_score': 6,
+                        'source': DecisionSource.SAFETY_MODE.value,
+                        'reasoning': f"TP too small: {tp_pct:.2f}% < {min_tp_pct:.2f}% (not worth fees)",
+                        'position_size_multiplier': 0.0,
+                        'news_sentiment': sentiment.value,
+                        'ml_signal': ml_result,
+                        'ta_confirmation': ta_data
+                    }
+                
+                # ПРОВЕРКА 2: Прибыльность после комиссий
                 quantity = 1.0  # Условное количество для проверки
                 
                 profitability = is_trade_profitable_after_fees(
@@ -677,7 +709,7 @@ class LocalBrain:
                         'fee_check': profitability
                     }
                 else:
-                    print(f"   ✅ Fee check passed: {profitability['reason']}")
+                    print(f"   ✅ Fee check passed: Profitable: ${profitability['net_profit']:.2f} net (after ${profitability['total_fee']:.2f} fees)")
             
             except Exception as e:
                 print(f"   ⚠️ Fee profitability check error: {e}")

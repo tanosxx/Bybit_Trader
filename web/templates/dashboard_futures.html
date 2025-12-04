@@ -23,16 +23,16 @@
         .balance-hero .pnl-label { font-size: 0.8rem; color: #888; }
         .balance-hero .pnl-value { font-size: 1.3rem; font-weight: bold; }
         
-        /* Metrics Grid */
-        .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 25px; }
-        .metric { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 18px; text-align: center; }
+        /* Metrics Grid - COMPACT */
+        .metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 20px; }
+        .metric { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; text-align: center; }
         .metric:hover { border-color: #ff8800; }
-        .metric-label { font-size: 0.8rem; color: #888; margin-bottom: 8px; }
-        .metric-value { font-size: 1.4rem; font-weight: bold; }
-        .metric-sub { font-size: 0.75rem; color: #666; margin-top: 5px; }
+        .metric-label { font-size: 0.7rem; color: #888; margin-bottom: 4px; }
+        .metric-value { font-size: 1.1rem; font-weight: bold; }
+        .metric-sub { font-size: 0.65rem; color: #666; margin-top: 3px; }
         
-        /* System Status */
-        .status-indicator { font-size: 1.5rem; }
+        /* System Status - COMPACT */
+        .status-indicator { font-size: 1.2rem; }
         .status-ok { color: #00ff88; }
         .status-warning { color: #ffaa00; }
         .status-error { color: #ff4444; }
@@ -313,7 +313,15 @@ function formatTime(timeStr) {
 }
 
 function fetchData() {
-    fetch('/api/data')
+    // Cache-busting: добавляем timestamp чтобы браузер не кэшировал
+    const timestamp = new Date().getTime();
+    fetch('/api/data?_=' + timestamp, {
+        cache: 'no-cache',
+        headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        }
+    })
         .then(r => r.json())
         .then(d => { 
             if (!d.error) updateUI(d);
