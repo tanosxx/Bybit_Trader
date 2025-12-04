@@ -1,120 +1,165 @@
-# ✅ ПОЛНЫЙ СБРОС ЗАВЕРШЕН
+# ✅ Reset Complete - $50 Balance
 
-**Дата**: 29 ноября 2025, 20:03 UTC
+## 🎯 Выполнено
 
-## 🎯 Что сделано:
+### 1. Очистка торговых данных
+- ✅ Trades: 0 (очищено)
+- ✅ Wallet history: 9 (начальная инициализация)
+- ✅ AI decisions: 0 (очищено)
+- ✅ System logs: 0 (очищено)
+- ✅ Candles: 62,582 (сохранено для ML)
 
-### 1. Очистка данных ✅
-- **Удалено сделок**: 4,103
-- **Удалено записей баланса**: 9,205
-- **Удалено логов**: 10,067
-- **Удалено фантомных позиций**: 2,286
+### 2. Обновление баланса
+- ✅ Config.py: `futures_virtual_balance = 50.0`
+- ✅ Бот инициализирован с $50
+- ✅ Логи показывают: "Virtual Balance: $50.0"
 
-### 2. Сброс баланса ✅
-- **Начальный баланс**: $500.00 (FUTURES virtual)
-- **Режим**: HYBRID (SPOT + FUTURES)
-- **Leverage**: 5x
-- **Margin**: ISOLATED
+### 3. Пересборка и запуск
+- ✅ Образ пересобран с новым config
+- ✅ Старый контейнер удалён
+- ✅ Бот запущен и работает
+- ✅ Все системы функционируют
 
-### 3. Конфигурация фьючерсов ✅
+## 📊 Текущий статус
+
+### Баланс
 ```
-Trading Mode: HYBRID
-Futures Enabled: ✅ True
-Virtual Balance: $500.0
-Leverage: 5x
-Margin Mode: ISOLATED
-Risk per Trade: 10.0%
-Max Positions: 3
-Min Confidence: 60.0%
-```
-
-### 4. Торговые пары ✅
-**FUTURES**: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT
-**SPOT**: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT
-
-### 5. Текущий баланс на бирже (Demo) ✅
-```
-USDT: $137,374.00
-USDC: $50,000.00
-ETH: $0.06
-SOL: $4.73
-XRP: $0.35
-BNB: $0.00
+💰 Virtual Balance: $50.0
+📊 Base Leverage: 5x (dynamic 2-7x)
+🎯 Risk per Trade: 20.0%
 ```
 
-### 6. Открытые позиции ✅
+### Торговая история
 ```
-BTCUSDT: No open positions
-ETHUSDT: No open positions
-SOLUSDT: No open positions
-BNBUSDT: No open positions
-XRPUSDT: No open positions
-```
-
-## 🚀 Бот запущен!
-
-### Статус:
-- ✅ Бот работает
-- ✅ Hybrid Loop активен
-- ✅ Анализирует рынки каждые 60 секунд
-- ✅ Ждет хороших сигналов для входа
-
-### Текущие цены:
-- BTC: $90,591.70
-- ETH: $2,988.31
-- SOL: $135.68
-
-### Первый цикл:
-```
-🔄 Hybrid Cycle #1 - 2025-11-29 20:03:13 UTC
-📊 Analyzing XRPUSDT...
-   Price: $2.21
-   RSI: 38.8
-   MACD: bearish
-   Trend: uptrend
-   Decision: SKIP (ждем лучших условий)
+Trades: 0
+Wallet history: 9 (начальная инициализация)
+Win Rate: 0% (нет сделок)
+PnL: $0.00
 ```
 
-## 📊 Мониторинг:
+### ML данные (сохранены)
+```
+Candles: 62,582 записей
+ML Model: загружена (LSTM v2)
+Self-Learning: 9,500+ samples
+Scenario Tester: 1,000 candles на символ
+```
 
-### Dashboard:
+### Активные фильтры
+1. ✅ Gatekeeper CHOP (>60)
+2. ✅ Gatekeeper Pattern (WR <40%)
+3. ✅ ML Confidence (>55%)
+4. ✅ Fee Profitability (Gross >= 2× Fees)
+5. ✅ Futures Brain Score (>=3)
+
+## 🔍 Проверка работы
+
+### Логи показывают:
+```
+🧠 Local Brain analyzing BTCUSDT...
+   🚫 Gatekeeper: Choppy Market (CHOP: 63.7 > 60.0)
+   🧠 AI Decision: SKIP
+
+🧠 FUTURES BRAIN: SKIP
+   Raw Conf: 0% -> Trading Conf: 30%
+   Score: 0/6 (need 3+)
+   Agents: {}
+```
+
+### Что работает:
+- ✅ Баланс $50
+- ✅ Gatekeeper фильтрует
+- ✅ ML модель загружена
+- ✅ Self-Learning работает (9,500+ samples)
+- ✅ Fee simulation включена
+- ✅ Futures Brain требует Score >= 3
+- ✅ Все данные ML сохранены
+
+## 📈 Ожидаемые результаты
+
+### Первые 24 часа:
+- **Сделок:** 5-15 (строгая фильтрация)
+- **Win Rate:** 30-50% (цель)
+- **Net PnL:** -$2 до +$5 (реалистично)
+- **Комиссии:** ~$0.12 на сделку
+
+### Через неделю:
+- **Баланс:** $48-$55 (цель: не потерять депозит)
+- **Win Rate:** 40%+ (стабильно)
+- **Avg Trade:** +$0.50 - $1.00 net
+
+## 🎯 Готовность к Real Trading
+
+После 1-2 дней с положительным Net PnL:
+- [ ] Net PnL > 0
+- [ ] Win Rate > 40%
+- [ ] Нет сделок с TP < 0.5%
+- [ ] Комиссии не съедают >30% прибыли
+- [ ] Gatekeeper не блокирует ВСЕ сигналы
+
+Если всё ОК → можно переходить на Real Trading!
+
+## 📝 Мониторинг
+
+### Команды для проверки:
+
+**Логи бота:**
+```bash
+docker logs -f bybit_bot
+```
+
+**Статистика сделок:**
+```bash
+docker exec bybit_db psql -U bybit_user -d bybit_trader -c "
+SELECT COUNT(*) as total, 
+       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+       ROUND(SUM(pnl)::numeric, 2) as total_pnl
+FROM trades 
+WHERE status = 'CLOSED';
+"
+```
+
+**Dashboard:**
+```
 http://88.210.10.145:8585
-
-### Логи:
-```bash
-ssh root@88.210.10.145
-docker logs bybit_bot -f
 ```
 
-### Проверка позиций:
-```bash
-docker exec bybit_bot python scripts/check_futures_status.py
-```
+## ⚠️ Важные замечания
 
-## 🎯 Что дальше:
+1. **Wallet history = 9** - это нормально
+   - Это начальная инициализация баланса
+   - Не влияет на торговлю
 
-1. **Мониторь Dashboard** - там будут появляться новые сделки
-2. **Следи за логами** - бот будет открывать позиции когда найдет хорошие сигналы
-3. **Проверяй баланс** - виртуальный баланс $500 будет меняться с каждой сделкой
+2. **Gatekeeper очень строгий**
+   - Блокирует ~98% сигналов
+   - Это хорошо - пропускает только лучшие входы
+   - Если нет сделок 24ч - можно немного ослабить (CHOP 60→55)
 
-## ⚙️ Параметры торговли:
+3. **ML данные сохранены**
+   - 62,582 свечей для анализа
+   - Self-Learning: 9,500+ samples
+   - Не нужно переобучать модель
 
-- **Размер позиции**: 10% от баланса = $50 на сделку
-- **Leverage**: 5x = эффективно $250 на позицию
-- **Stop Loss**: 2% от входа
-- **Take Profit**: 3% от входа
-- **Trailing Stop**: Активен (активация +1%, callback 0.5%)
-- **Funding Rate Filter**: Активен (блокирует при высоком funding)
+4. **Fee simulation активна**
+   - Блокирует сделки с малым профитом
+   - Показывает реалистичный PnL
+   - Готовит к Real Trading
 
-## 🔥 Важно:
+## 🚀 Система готова!
 
-- Бот использует **виртуальный баланс $500** для расчета позиций
-- Реальный баланс на бирже ($137k) НЕ используется
-- Это защита от больших потерь
-- Все сделки на **Demo API** (виртуальные деньги)
+Бот работает с чистого листа:
+- ✅ Баланс: $50.00
+- ✅ Сделки: 0
+- ✅ ML данные: сохранены
+- ✅ Все фильтры: активны
+- ✅ Fee simulation: включена
+
+Можно начинать торговлю и мониторить результаты!
 
 ---
 
-**Статус**: 🟢 ВСЕ РАБОТАЕТ! БОТ ГОТОВ К ТОРГОВЛЕ!
-
-Теперь просто жди - бот сам найдет хорошие моменты для входа и начнет торговать.
+**Дата:** 2025-12-04  
+**Время:** 02:30 UTC  
+**Статус:** ✅ Reset Complete  
+**Стартовый баланс:** $50.00  
+**Версия:** v3.1 (Futures Brain Fix + Simulated Realism)
