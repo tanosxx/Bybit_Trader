@@ -54,30 +54,30 @@ class FuturesBrain:
     """
     
     def __init__(self):
-        # Конфигурация агентов для фьючерсов (FIXED v2.0)
+        # Конфигурация агентов для фьючерсов (BALANCED v3.0)
         self.agents = {
             'conservative': {
                 'weight': 3,
-                'min_confidence': 75,  # Trading Confidence %
+                'min_confidence': 70,  # Снижено с 75 - слишком строго
                 'require_ta': True,
                 'max_risk': 5
             },
             'balanced': {
                 'weight': 2,
-                'min_confidence': 60,  # Повышено с 55
+                'min_confidence': 55,  # Снижено с 60 - основной фильтр
                 'require_ta': True,
                 'max_risk': 7
             },
             'aggressive': {
                 'weight': 1,
-                'min_confidence': 55,  # Повышено с 40 - НЕ ТОРГУЕМ С 0% CONFIDENCE!
-                'require_ta': False,
-                'max_risk': 8  # Снижено с 9
+                'min_confidence': 45,  # Снижено с 55 - даём шанс слабым сигналам
+                'require_ta': False,  # Но без TA подтверждения
+                'max_risk': 8
             }
         }
         
-        # Порог для входа (повышен для качества)
-        self.min_score_to_trade = 3  # Минимум 2 агента (balanced + aggressive) или 1 conservative
+        # Порог для входа - оставляем 3 (нужно минимум 2 агента)
+        self.min_score_to_trade = 3  # balanced (2) + aggressive (1) = 3 ИЛИ conservative (3) = 3
         
         # Лимит потерь на сделку (% от депозита)
         self.max_loss_per_trade_pct = 2.0

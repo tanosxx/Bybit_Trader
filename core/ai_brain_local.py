@@ -89,9 +89,9 @@ class LocalBrain:
             except Exception as e:
                 print(f"⚠️ Gatekeeper: ScenarioTester init failed: {e}")
         
-        # Пороги фильтрации
+        # Пороги фильтрации (BALANCED v3.0)
         self.chop_threshold = 60.0  # CHOP > 60 = флэт
-        self.historical_wr_threshold = 40.0  # Historical WR < 40% = плохой паттерн
+        self.historical_wr_threshold = 30.0  # Historical WR < 30% = плохой паттерн (снижено с 40%)
         
         if SCENARIO_TESTER_AVAILABLE:
             print(f"🚦 Gatekeeper v3.0 enabled:")
