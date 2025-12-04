@@ -3,7 +3,7 @@
 Гибридная система: SPOT + FUTURES
 """
 from pydantic_settings import BaseSettings
-from typing import Optional, Literal
+from typing import Optional, Literal, Dict
 
 
 class Settings(BaseSettings):
@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     futures_max_total_orders: int = 80  # Макс. всего ордеров (общий лимит)
     futures_min_confidence: float = 0.50  # Мин. confidence для входа (50%)
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
+    
+    # ========== SIMULATED REALISM (Fees & Spreads) ==========
+    # Реалистичный учёт комиссий для подготовки к Real Trading
+    estimated_fee_rate: float = 0.0006  # 0.06% Taker fee (Bybit standard)
+    min_profit_threshold_multiplier: float = 2.0  # Минимальный профит = 2x комиссия
+    simulate_fees_in_demo: bool = True  # Учитывать комиссии в Demo режиме
     
     # ========== TRADING HOURS FILTER ==========
     trading_hours_enabled: bool = False  # ОТКЛЮЧЕНО - торгуем 24/7
@@ -155,6 +161,137 @@ def get_category() -> str:
 
 def get_trading_pairs() -> list:
     return settings.futures_pairs if is_futures_mode() else settings.trading_pairs
+
+
+# ========== FEE CALCULATION (Simulated Realism) ==========
+def calculate_fees(entry_value: float, exit_value: float, fee_rate: float = None) -> Dict[str, float]:
+    """
+    Рассчитать комиссии для сделки
+    
+    Args:
+        entry_value: Стоимость входа (quantity * entry_price)
+        exit_value: Стоимость выхода (quantity * exit_price)
+        fee_rate: Ставка комиссии (по умолчанию из settings)
+    
+    Returns:
+        {
+            'entry_fee': float,  # Комиссия при входе
+            'exit_fee': float,   # Комиссия при выходе
+            'total_fee': float,  # Общая комиссия
+            'fee_rate': float    # Использованная ставка
+        }
+    """
+    if fee_rate is None:
+        fee_rate = settings.estimated_fee_rate
+    
+    entry_fee = entry_value * fee_rate
+    exit_fee = exit_value * fee_rate
+    total_fee = entry_fee + exit_fee
+    
+    return {
+        'entry_fee': entry_fee,
+        'exit_fee': exit_fee,
+        'total_fee': total_fee,
+        'fee_rate': fee_rate
+    }
+
+
+def calculate_net_pnl(gross_pnl: float, entry_value: float, exit_value: float) -> Dict[str, float]:
+    """
+    Рассчитать чистый PnL с учётом комиссий
+    
+    Args:
+        gross_pnl: Валовая прибыль (как на бирже)
+        entry_value: Стоимость входа
+        exit_value: Стоимость выхода
+    
+    Returns:
+        {
+            'gross_pnl': float,  # Валовая прибыль
+            'fees': dict,        # Детали комиссий
+            'net_pnl': float,    # Чистая прибыль (в карман)
+            'fee_impact_pct': float  # Влияние комиссий в %
+        }
+    """
+    fees = calculate_fees(entry_value, exit_value)
+    net_pnl = gross_pnl - fees['total_fee']
+    
+    # Процент влияния комиссий
+    fee_impact_pct = 0.0
+    if gross_pnl != 0:
+        fee_impact_pct = (fees['total_fee'] / abs(gross_pnl)) * 100
+    
+    return {
+        'gross_pnl': gross_pnl,
+        'fees': fees,
+        'net_pnl': net_pnl,
+        'fee_impact_pct': fee_impact_pct
+    }
+
+
+def is_trade_profitable_after_fees(
+    entry_price: float,
+    take_profit: float,
+    quantity: float,
+    side: str = "LONG"
+) -> Dict[str, any]:
+    """
+    Проверить, будет ли сделка прибыльной после комиссий
+    
+    Args:
+        entry_price: Цена входа
+        take_profit: Цена TP
+        quantity: Количество
+        side: LONG или SHORT
+    
+    Returns:
+        {
+            'is_profitable': bool,  # Прибыльна ли сделка
+            'gross_profit': float,  # Валовая прибыль
+            'net_profit': float,    # Чистая прибыль
+            'min_required_profit': float,  # Минимальный профит для окупаемости
+            'reason': str  # Объяснение
+        }
+    """
+    entry_value = entry_price * quantity
+    exit_value = take_profit * quantity
+    
+    # Рассчитываем валовую прибыль
+    if side.upper() in ["LONG", "BUY"]:
+        gross_profit = (take_profit - entry_price) * quantity
+    else:  # SHORT
+        gross_profit = (entry_price - take_profit) * quantity
+    
+    # Рассчитываем комиссии
+    fees = calculate_fees(entry_value, exit_value)
+    total_fee = fees['total_fee']
+    
+    # Минимальный профит = 2x комиссия (по умолчанию)
+    min_required_profit = total_fee * settings.min_profit_threshold_multiplier
+    
+    # Чистая прибыль
+    net_profit = gross_profit - total_fee
+    
+    # Проверка прибыльности
+    is_profitable = net_profit > 0 and gross_profit >= min_required_profit
+    
+    reason = ""
+    if not is_profitable:
+        if net_profit <= 0:
+            reason = f"Net profit negative: ${net_profit:.2f}"
+        else:
+            reason = f"Profit too small: ${gross_profit:.2f} < ${min_required_profit:.2f} (min required)"
+    else:
+        reason = f"Profitable: ${net_profit:.2f} net (after ${total_fee:.2f} fees)"
+    
+    return {
+        'is_profitable': is_profitable,
+        'gross_profit': gross_profit,
+        'net_profit': net_profit,
+        'total_fee': total_fee,
+        'min_required_profit': min_required_profit,
+        'reason': reason
+    }
 
 
 # AI Prompts для Gemini (специальный промпт чтобы не тупил!)

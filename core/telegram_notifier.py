@@ -128,18 +128,23 @@ class TelegramReporter:
         pnl_pct: float,
         duration_minutes: int = 0,
         reason: str = "",
-        market_type: str = "futures"
+        market_type: str = "futures",
+        gross_pnl: float = None,
+        net_pnl: float = None,
+        fees: float = None
     ):
         """
         💰 TAKE PROFIT / 🩸 STOP LOSS
         
-        Компактное уведомление о закрытии
+        Компактное уведомление о закрытии с учётом комиссий
         """
         if not self._check_futures_only(market_type):
             return
         
-        # Заголовок по результату
-        if pnl >= 0:
+        # Заголовок по результату (используем net_pnl если есть, иначе pnl)
+        final_pnl = net_pnl if net_pnl is not None else pnl
+        
+        if final_pnl >= 0:
             header = "💰 <b>TAKE PROFIT</b>"
             pnl_emoji = "📈"
         else:
@@ -155,9 +160,19 @@ class TelegramReporter:
         message = f"""{header}
 
 <b>#{symbol}</b> ({side})
-{pnl_emoji} <b>Exit:</b> ${exit_price:,.2f}
-💸 <b>PnL:</b> ${pnl:+.2f} ({pnl_pct:+.1f}%)
-⏱️ <b>Duration:</b> {duration_str}"""
+{pnl_emoji} <b>Exit:</b> ${exit_price:,.2f}"""
+        
+        # Показываем Gross и Net PnL если доступны
+        if gross_pnl is not None and net_pnl is not None and fees is not None:
+            message += f"""
+💵 <b>Gross PnL:</b> ${gross_pnl:+.2f} ({pnl_pct:+.1f}%)
+💸 <b>Fees:</b> -${fees:.2f}
+💰 <b>Net PnL:</b> ${net_pnl:+.2f} (in pocket)"""
+        else:
+            # Fallback: старый формат
+            message += f"\n💸 <b>PnL:</b> ${pnl:+.2f} ({pnl_pct:+.1f}%)"
+        
+        message += f"\n⏱️ <b>Duration:</b> {duration_str}"
         
         if reason:
             message += f"\n📝 {reason}"

@@ -203,7 +203,7 @@ class HybridTradingLoop:
             
             print(f"\n   🧠 FUTURES BRAIN: {futures_decision.action.value}")
             print(f"      Raw Conf: {futures_decision.raw_confidence:.0%} -> Trading Conf: {futures_decision.trading_confidence:.0f}%")
-            print(f"      Score: {futures_decision.total_score}/6 (need 1+)")
+            print(f"      Score: {futures_decision.total_score}/6 (need {self.futures_brain.min_score_to_trade}+)")
             print(f"      Agents: {futures_decision.agents_voted}")
             
             # ========== AI LOGGER - Полное логирование для анализа ==========

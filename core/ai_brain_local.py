@@ -635,7 +635,54 @@ class LocalBrain:
                 print(f"   ⚠️  TA does not confirm {ml_decision} - reducing position size")
                 # Не блокируем, но уменьшаем размер
         
-        # ========== ШАГ 4: FINAL DECISION ==========
+        # ========== ШАГ 4: FEE PROFITABILITY CHECK ==========
+        # Проверяем, окупит ли сделка комиссии
+        from config import settings, is_trade_profitable_after_fees
+        
+        if settings.simulate_fees_in_demo and ml_decision in ['BUY', 'SELL']:
+            try:
+                # Получаем текущую цену и рассчитываем TP
+                current_price = market_data.get('price', 0)
+                
+                # Рассчитываем TP на основе change_pct от ML
+                if ml_decision == 'BUY':
+                    take_profit = current_price * (1 + abs(change_pct) / 100)
+                else:  # SELL
+                    take_profit = current_price * (1 - abs(change_pct) / 100)
+                
+                # Проверяем прибыльность (используем условное количество)
+                quantity = 1.0  # Условное количество для проверки
+                
+                profitability = is_trade_profitable_after_fees(
+                    entry_price=current_price,
+                    take_profit=take_profit,
+                    quantity=quantity,
+                    side=ml_decision
+                )
+                
+                if not profitability['is_profitable']:
+                    print(f"   ⚠️  Trade blocked: {profitability['reason']}")
+                    self.stats['skips'] += 1
+                    
+                    return {
+                        'decision': 'SKIP',
+                        'confidence': 0.0,
+                        'risk_score': 6,
+                        'source': DecisionSource.SAFETY_MODE.value,
+                        'reasoning': f"Profit too small after fees: {profitability['reason']}",
+                        'position_size_multiplier': 0.0,
+                        'news_sentiment': sentiment.value,
+                        'ml_signal': ml_result,
+                        'ta_confirmation': ta_data,
+                        'fee_check': profitability
+                    }
+                else:
+                    print(f"   ✅ Fee check passed: {profitability['reason']}")
+            
+            except Exception as e:
+                print(f"   ⚠️ Fee profitability check error: {e}")
+        
+        # ========== ШАГ 5: FINAL DECISION ==========
         risk_score = self._calculate_risk_score(market_data, news_data, final_confidence)
         
         # Определяем размер позиции
