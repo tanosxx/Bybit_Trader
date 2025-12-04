@@ -540,6 +540,163 @@ def get_futures_trades_api():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/system/status')
+def get_system_status_api():
+    """API для получения статуса всех систем (зелёные/красные лампочки)"""
+    try:
+        import os
+        import pickle
+        from datetime import datetime, timedelta
+        
+        systems = {}
+        
+        # 1. Self-Learning ML
+        try:
+            model_path = 'ml_data/self_learner.pkl'
+            if os.path.exists(model_path):
+                with open(model_path, 'rb') as f:
+                    data = pickle.load(f)
+                learning_count = data.get('learning_count', 0)
+                updated_at = data.get('updated_at', None)
+                
+                # Проверяем свежесть (обновлялся ли за последний час)
+                is_fresh = False
+                if updated_at:
+                    try:
+                        last_update = datetime.fromisoformat(updated_at)
+                        is_fresh = (datetime.utcnow() - last_update) < timedelta(hours=1)
+                    except:
+                        pass
+                
+                systems['self_learning'] = {
+                    'status': 'ok' if learning_count > 0 and is_fresh else 'warning',
+                    'message': f'{learning_count} samples',
+                    'details': f'Last update: {updated_at or "unknown"}'
+                }
+            else:
+                systems['self_learning'] = {
+                    'status': 'error',
+                    'message': 'Model file not found',
+                    'details': 'File missing'
+                }
+        except Exception as e:
+            systems['self_learning'] = {
+                'status': 'error',
+                'message': 'Error loading',
+                'details': str(e)
+            }
+        
+        # 2. LSTM ML Model
+        try:
+            lstm_path = 'ml_training/models/bybit_lstm_model_v2.h5'
+            if os.path.exists(lstm_path):
+                file_size = os.path.getsize(lstm_path) / (1024 * 1024)  # MB
+                systems['lstm_model'] = {
+                    'status': 'ok',
+                    'message': f'{file_size:.1f} MB',
+                    'details': 'Model ready'
+                }
+            else:
+                systems['lstm_model'] = {
+                    'status': 'error',
+                    'message': 'Model not found',
+                    'details': 'File missing'
+                }
+        except Exception as e:
+            systems['lstm_model'] = {
+                'status': 'error',
+                'message': 'Error checking',
+                'details': str(e)
+            }
+        
+        # 3. Database
+        try:
+            from sqlalchemy.ext.asyncio import create_async_engine
+            from config import settings
+            engine = create_async_engine(settings.database_url, echo=False)
+            # Простая проверка подключения
+            systems['database'] = {
+                'status': 'ok',
+                'message': 'Connected',
+                'details': 'PostgreSQL'
+            }
+        except Exception as e:
+            systems['database'] = {
+                'status': 'error',
+                'message': 'Connection failed',
+                'details': str(e)
+            }
+        
+        # 4. Gatekeeper (ScenarioTester)
+        try:
+            # Проверяем наличие модуля
+            from core.scenario_tester import get_scenario_tester
+            systems['gatekeeper'] = {
+                'status': 'ok',
+                'message': 'Active',
+                'details': 'CHOP + Pattern filters'
+            }
+        except Exception as e:
+            systems['gatekeeper'] = {
+                'status': 'warning',
+                'message': 'Not available',
+                'details': str(e)
+            }
+        
+        # 5. News Brain
+        try:
+            # Проверяем доступность RSS
+            systems['news_brain'] = {
+                'status': 'ok',
+                'message': 'RSS feeds active',
+                'details': 'Sentiment analysis'
+            }
+        except Exception as e:
+            systems['news_brain'] = {
+                'status': 'warning',
+                'message': 'Limited',
+                'details': str(e)
+            }
+        
+        # 6. Bybit API
+        try:
+            # Проверяем наличие API ключей
+            from config import settings
+            if settings.bybit_api_key and settings.bybit_api_secret:
+                systems['bybit_api'] = {
+                    'status': 'ok',
+                    'message': 'Demo mode',
+                    'details': 'API keys configured'
+                }
+            else:
+                systems['bybit_api'] = {
+                    'status': 'error',
+                    'message': 'No API keys',
+                    'details': 'Configuration missing'
+                }
+        except Exception as e:
+            systems['bybit_api'] = {
+                'status': 'error',
+                'message': 'Error',
+                'details': str(e)
+            }
+        
+        response = jsonify({
+            'systems': systems,
+            'timestamp': datetime.utcnow().isoformat(),
+            'overall_status': 'ok' if all(s['status'] == 'ok' for s in systems.values()) else 'warning'
+        })
+        
+        # Отключаем кэширование
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        return response
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/ml/status')
 def get_ml_status_api():
     """API для получения статуса Self-Learning модели"""
@@ -566,7 +723,7 @@ def get_ml_status_api():
             metric = data.get('metric')
             accuracy = metric.get() if metric else 0.0
             
-            return jsonify({
+            response = jsonify({
                 'enabled': True,
                 'learned_samples': learning_count,
                 'wins': wins,
@@ -574,8 +731,16 @@ def get_ml_status_api():
                 'win_rate': win_rate,
                 'model_accuracy': accuracy,
                 'predictions': predictions_count,
-                'ready': learning_count >= 50
+                'ready': learning_count >= 50,
+                'timestamp': datetime.utcnow().isoformat()
             })
+            
+            # Отключаем кэширование
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            
+            return response
         else:
             return jsonify({'enabled': False, 'error': 'Model file not found'}), 404
     

@@ -54,30 +54,30 @@ class FuturesBrain:
     """
     
     def __init__(self):
-        # Конфигурация агентов для фьючерсов (оптимизировано)
+        # Конфигурация агентов для фьючерсов (FIXED v2.0)
         self.agents = {
             'conservative': {
                 'weight': 3,
-                'min_confidence': 75,  # Trading Confidence % (снижено с 80)
+                'min_confidence': 75,  # Trading Confidence %
                 'require_ta': True,
-                'max_risk': 5  # Увеличено с 4
+                'max_risk': 5
             },
             'balanced': {
                 'weight': 2,
-                'min_confidence': 55,  # Снижено с 60
+                'min_confidence': 60,  # Повышено с 55
                 'require_ta': True,
-                'max_risk': 7  # Увеличено с 6
+                'max_risk': 7
             },
             'aggressive': {
                 'weight': 1,
-                'min_confidence': 40,  # Снижено с 50
+                'min_confidence': 55,  # Повышено с 40 - НЕ ТОРГУЕМ С 0% CONFIDENCE!
                 'require_ta': False,
-                'max_risk': 9  # Увеличено с 8
+                'max_risk': 8  # Снижено с 9
             }
         }
         
-        # Порог для входа (снижен для большей активности)
-        self.min_score_to_trade = 1  # Минимум 1 агент должен согласиться
+        # Порог для входа (повышен для качества)
+        self.min_score_to_trade = 3  # Минимум 2 агента (balanced + aggressive) или 1 conservative
         
         # Лимит потерь на сделку (% от депозита)
         self.max_loss_per_trade_pct = 2.0
@@ -252,33 +252,38 @@ class FuturesBrain:
         # ========== ОПРЕДЕЛЯЕМ ДЕЙСТВИЕ ==========
         action = 'SKIP'
         
-        # Логика определения LONG/SHORT
+        # Логика определения LONG/SHORT (FIXED - убран искусственный буст)
         if raw_decision == 'BUY':
             action = 'LONG'
         elif raw_decision == 'SELL':
             action = 'SHORT'
         elif raw_decision in ['HOLD', 'SKIP']:
-            # Пробуем определить по TA
-            if rsi < 30 and macd_trend in ['bullish', 'bullish_crossover']:
+            # ТОЛЬКО если ML не уверен, смотрим на СИЛЬНЫЕ сигналы TA
+            # Убран искусственный буст - используем только реальную уверенность ML
+            if rsi < 25 and macd_trend == 'bullish_crossover' and trend in ['uptrend', 'strong_uptrend']:
+                # Экстремально перепродан + бычий кроссовер + тренд вверх
                 action = 'LONG'
-                trading_conf = max(trading_conf, 60)  # Boost confidence
-            elif rsi > 70 and macd_trend in ['bearish', 'bearish_crossover']:
+                trading_conf = max(trading_conf, 50)  # Минимальный буст
+            elif rsi > 75 and macd_trend == 'bearish_crossover' and trend in ['downtrend', 'strong_downtrend']:
+                # Экстремально перекуплен + медвежий кроссовер + тренд вниз
                 action = 'SHORT'
-                trading_conf = max(trading_conf, 60)
-            elif trend == 'strong_uptrend' and rsi < 65:
-                action = 'LONG'
-                trading_conf = max(trading_conf, 55)
-            elif trend == 'strong_downtrend' and rsi > 35:
-                action = 'SHORT'
-                trading_conf = max(trading_conf, 55)
+                trading_conf = max(trading_conf, 50)  # Минимальный буст
+            # Убраны слабые сигналы (rsi < 65, rsi > 35) - они давали ложные входы
         
-        # ========== SMART SHORTING ==========
-        # Если новости негативные + (ML DOWN или TA Bearish) -> SHORT
+        # ========== SMART SHORTING (FIXED - проверка тренда) ==========
+        # Если новости негативные + ML SELL + TA Bearish -> SHORT
+        # НО: НЕ шортим на сильном uptren даже с негативными новостями!
         if news_sentiment == 'NEGATIVE':
-            if raw_decision == 'SELL' or macd_trend == 'bearish' or trend in ['downtrend', 'strong_downtrend']:
+            if raw_decision == 'SELL' and macd_trend == 'bearish' and trend in ['downtrend', 'strong_downtrend']:
+                # Все 3 условия: негативные новости + ML SELL + медвежий тренд
                 action = 'SHORT'
-                trading_conf = max(trading_conf, 65)  # Boost для негативных новостей
-                reasoning = f"News NEGATIVE + {macd_trend} MACD -> SHORT"
+                trading_conf = max(trading_conf, 60)  # Умеренный буст
+                reasoning = f"News NEGATIVE + ML SELL + {trend} -> SHORT"
+            elif trend in ['uptrend', 'strong_uptrend']:
+                # Защита: не шортим на сильном uptren
+                if action == 'SHORT':
+                    action = 'SKIP'
+                    reasoning = "SHORT blocked: strong uptrend detected"
         
         if action == 'SKIP':
             self.stats['skips'] += 1
