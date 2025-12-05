@@ -2,6 +2,15 @@
 
 ## 🚀 Быстрые команды
 
+### System Check Scripts
+```bash
+# Быстрая проверка (bash, 2-3 сек)
+ssh root@88.210.10.145 "cd /root/Bybit_Trader && ./quick_status.sh"
+
+# Полная проверка (python, детальная)
+ssh root@88.210.10.145 "docker exec bybit_bot python system_check.py"
+```
+
 ### Проверка статуса
 ```bash
 # Все контейнеры
