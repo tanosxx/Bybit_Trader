@@ -19,6 +19,15 @@ from enum import Enum
 from core.news_brain import get_news_brain, MarketSentiment
 from core.ml_predictor_v2 import get_ml_predictor_v2  # Используем существующую LSTM модель!
 from core.ta_lib import get_choppiness_index
+from core.strategic_brain import get_strategic_brain, REGIME_BULL_RUSH, REGIME_BEAR_CRASH, REGIME_SIDEWAYS, REGIME_UNCERTAIN
+
+# Import GlobalBrainState для обновления Neural HUD
+try:
+    from core.state import get_global_brain_state
+    STATE_AVAILABLE = True
+except ImportError:
+    STATE_AVAILABLE = False
+    print("⚠️ GlobalBrainState not available")
 
 # Online Learning (опционально - graceful degradation)
 try:
@@ -70,6 +79,10 @@ class LocalBrain:
         self.news_brain = get_news_brain()
         self.ml_predictor = get_ml_predictor_v2()  # LSTM модель v2
         self.ml_loaded = False
+        
+        # Strategic Brain (Gatekeeper Level 0)
+        self.strategic_brain = get_strategic_brain()
+        self.api_client = api_client  # Для получения дневных свечей
         
         # Online Learning (опционально)
         self.self_learner = None
@@ -442,6 +455,60 @@ class LocalBrain:
         
         print(f"\n🧠 Local Brain analyzing {symbol}...")
         
+        # Обновляем GlobalBrainState - начало анализа
+        if STATE_AVAILABLE:
+            try:
+                state = get_global_brain_state()
+                state.update_system_status(running=True, scan_time=datetime.now())
+            except Exception as e:
+                pass  # Не критично
+        
+        # ========== GATEKEEPER LEVEL 0: STRATEGIC BRAIN (Market Regime) ==========
+        # Определяет глобальный режим рынка раз в 4 часа через Claude
+        strategic_regime = None
+        try:
+            # Получаем дневные свечи для анализа (7 дней)
+            daily_candles = []
+            if self.api_client:
+                # Берём BTC и ETH как индикаторы рынка
+                for major_symbol in ['BTCUSDT', 'ETHUSDT']:
+                    try:
+                        candles_data = await self.api_client.get_klines(
+                            symbol=major_symbol,
+                            interval='D',  # Дневные свечи
+                            limit=7
+                        )
+                        for candle in candles_data:
+                            daily_candles.append({
+                                'symbol': major_symbol,
+                                'open': float(candle[1]),
+                                'high': float(candle[2]),
+                                'low': float(candle[3]),
+                                'close': float(candle[4]),
+                                'volume': float(candle[5])
+                            })
+                    except Exception as e:
+                        print(f"   ⚠️ Failed to get daily candles for {major_symbol}: {e}")
+            
+            # Получаем сводку новостей
+            news_summary = "No news data"
+            try:
+                news_data = await self.news_brain.get_market_sentiment(symbol, hours_back=24)
+                news_summary = f"{news_data['sentiment'].value} (score: {news_data['score']:.2f}, {news_data['news_count']} news)"
+            except:
+                pass
+            
+            # Запрашиваем режим у Strategic Brain
+            if daily_candles:
+                strategic_regime = await self.strategic_brain.get_market_regime(
+                    daily_candles=daily_candles,
+                    news_summary=news_summary
+                )
+                print(f"   🎯 Strategic Regime: {strategic_regime}")
+        except Exception as e:
+            print(f"   ⚠️ Strategic Brain error: {e}")
+            strategic_regime = REGIME_SIDEWAYS  # Fallback
+        
         # ========== ШАГ 0: TRADING HOURS CHECK ==========
         if not self._is_trading_hours():
             from datetime import datetime, timezone
@@ -471,9 +538,26 @@ class LocalBrain:
                 
                 chop = get_choppiness_index(high, low, close, period=14)
                 
+                # Обновляем GlobalBrainState - CHOP
+                if STATE_AVAILABLE:
+                    try:
+                        state = get_global_brain_state()
+                        state.update_market_data(symbol, chop=chop)
+                    except:
+                        pass
+                
                 # Проверка: CHOP > 60 (флэт/боковик)
                 if chop > self.chop_threshold:
                     print(f"   🚫 Gatekeeper: Choppy Market (CHOP: {chop:.1f} > {self.chop_threshold})")
+                    
+                    # Обновляем Gatekeeper status
+                    if STATE_AVAILABLE:
+                        try:
+                            state = get_global_brain_state()
+                            state.update_gatekeeper(symbol, f"BLOCK: CHOP {chop:.1f}")
+                        except:
+                            pass
+                    
                     self.stats['skips'] += 1
                     return {
                         'decision': 'SKIP',
@@ -495,6 +579,19 @@ class LocalBrain:
         sentiment = news_data['sentiment']
         
         print(f"   📰 News Sentiment: {sentiment.value} (score: {news_data['score']:.2f})")
+        
+        # Обновляем GlobalBrainState - новости
+        if STATE_AVAILABLE:
+            try:
+                state = get_global_brain_state()
+                headline = news_data.get('recommendation', 'No news')
+                state.update_news(
+                    sentiment=news_data['score'],
+                    headline=headline,
+                    count=news_data.get('news_count', 0)
+                )
+            except Exception as e:
+                pass
         
         # PANIC SELL при экстремальном страхе
         if sentiment == MarketSentiment.EXTREME_FEAR and self.config['enable_panic_sell']:
@@ -520,6 +617,19 @@ class LocalBrain:
         
         change_pct = ml_result.get('predicted_change_pct', 0)
         print(f"   🤖 ML Signal: {ml_decision} (conf: {ml_confidence:.0%}, change: {change_pct:+.2f}%)")
+        
+        # Обновляем GlobalBrainState - ML prediction
+        if STATE_AVAILABLE:
+            try:
+                state = get_global_brain_state()
+                state.update_ml_prediction(symbol, ml_decision, ml_confidence, change_pct)
+                
+                # Обновляем RSI и цену
+                rsi = market_data.get('rsi', 50)
+                price = market_data.get('price', 0)
+                state.update_market_data(symbol, rsi=rsi, price=price)
+            except Exception as e:
+                pass
         
         # Проверяем разрешения от новостей
         if ml_decision == 'BUY' and not news_data['allow_buy']:
@@ -714,6 +824,31 @@ class LocalBrain:
             except Exception as e:
                 print(f"   ⚠️ Fee profitability check error: {e}")
         
+        # ========== GATEKEEPER LEVEL 0.5: STRATEGIC VETO ==========
+        # Проверяем, разрешён ли сигнал в текущем рыночном режиме
+        if strategic_regime and ml_decision in ['BUY', 'SELL']:
+            signal_allowed = self.strategic_brain.should_allow_signal(
+                signal_direction=ml_decision,
+                current_regime=strategic_regime
+            )
+            
+            if not signal_allowed:
+                # Strategic Brain заблокировал сигнал
+                self.stats['skips'] += 1
+                
+                return {
+                    'decision': 'SKIP',
+                    'confidence': 0.0,
+                    'risk_score': 5,
+                    'source': DecisionSource.SAFETY_MODE.value,
+                    'reasoning': f'Strategic Veto: {ml_decision} blocked in {strategic_regime} regime',
+                    'position_size_multiplier': 0.0,
+                    'news_sentiment': sentiment.value,
+                    'ml_signal': ml_result,
+                    'ta_confirmation': ta_data,
+                    'strategic_regime': strategic_regime
+                }
+        
         # ========== ШАГ 5: FINAL DECISION ==========
         risk_score = self._calculate_risk_score(market_data, news_data, final_confidence)
         
@@ -763,7 +898,8 @@ class LocalBrain:
             'news_sentiment': sentiment.value,
             'ml_signal': ml_result,
             'ta_confirmation': ta_data,
-            'ml_features': ml_features  # Для Self-Learning
+            'ml_features': ml_features,  # Для Self-Learning
+            'strategic_regime': strategic_regime  # Режим рынка от Claude
         }
     
     def print_stats(self):

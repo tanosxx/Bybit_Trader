@@ -1,7 +1,7 @@
 # Core
 python-dotenv==1.0.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+pydantic==2.10.5
+pydantic-settings==2.7.1
 
 # Async
 aiohttp==3.9.1
@@ -40,3 +40,6 @@ tensorflow==2.18.0
 
 # Online Learning
 river==0.21.0
+
+# Strategic Brain - Claude через OhMyGPT (OpenAI-compatible API)
+openai==1.54.0

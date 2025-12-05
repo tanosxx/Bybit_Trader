@@ -2,12 +2,20 @@
 Конфигурация Bybit Trading Bot v2.0
 Гибридная система: SPOT + FUTURES
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 from typing import Optional, Literal, Dict
 
 
 class Settings(BaseSettings):
     """Настройки приложения"""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        protected_namespaces=(),
+        extra="ignore"  # Игнорировать неизвестные поля из .env
+    )
     
     # Bybit API
     bybit_api_key: str
@@ -34,6 +42,10 @@ class Settings(BaseSettings):
     cryptopanic_api_key: Optional[str] = None
     cryptopanic_api_key_2: Optional[str] = None
     cryptopanic_api_key_3: Optional[str] = None
+    
+    # Strategic Brain - Claude 3.5 Sonnet через OhMyGPT
+    # Примечание: эти настройки читаются напрямую через os.getenv() в strategic_brain.py
+    # чтобы избежать конфликтов с Pydantic validation
     
     # ========== HYBRID TRADING MODE ==========
     # Режим торговли: 'SPOT', 'FUTURES', 'HYBRID' (оба одновременно)
@@ -117,10 +129,6 @@ class Settings(BaseSettings):
     # Futures-specific pairs (linear USDT perpetuals)
     # Добавлены BNB и XRP для большей активности
     futures_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 
 settings = Settings()

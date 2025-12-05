@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural HUD - Bybit Trading Bot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #00ff88;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #00ff88;
+            margin-bottom: 30px;
+            background: rgba(0, 255, 136, 0.05);
+            border-radius: 10px;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .header .subtitle {
+            color: #00ccff;
+            font-size: 1.2em;
+            margin-top: 10px;
+        }
+
+        /* Strategic Brain (Генерал) */
+        .strategic-section {
+            background: linear-gradient(135deg, #1a1f3a 0%, #2a2f4a 100%);
+            border: 2px solid #ff00ff;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
+        }
+
+        .strategic-title {
+            font-size: 2em;
+            color: #ff00ff;
+            text-align: center;
+            margin-bottom: 20px;
+            text-shadow: 0 0 15px #ff00ff;
+        }
+
+        .regime-display {
+            text-align: center;
+            font-size: 4em;
+            font-weight: bold;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .regime-BULL_RUSH {
+            background: linear-gradient(135deg, #00ff00 0%, #00cc00 100%);
+            color: #000;
+            box-shadow: 0 0 40px rgba(0, 255, 0, 0.6);
+        }
+
+        .regime-BEAR_CRASH {
+            background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+            color: #fff;
+            box-shadow: 0 0 40px rgba(255, 0, 0, 0.6);
+        }
+
+        .regime-SIDEWAYS {
+            background: linear-gradient(135deg, #ffaa00 0%, #ff8800 100%);
+            color: #000;
+            box-shadow: 0 0 40px rgba(255, 170, 0, 0.6);
+        }
+
+        .regime-UNCERTAIN {
+            background: linear-gradient(135deg, #888 0%, #666 100%);
+            color: #fff;
+            box-shadow: 0 0 40px rgba(136, 136, 136, 0.6);
+        }
+
+        .regime-reason {
+            text-align: center;
+            color: #00ccff;
+            font-size: 1.2em;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        /* Left Column - Market Indicators */
+        .indicators-section {
+            background: rgba(0, 255, 136, 0.1);
+            border: 2px solid #00ff88;
+            border-radius: 15px;
+            padding: 25px;
+        }
+
+        .section-title {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            text-align: center;
+            text-shadow: 0 0 10px currentColor;
+        }
+
+        .indicator-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-left: 4px solid #00ff88;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+        }
+
+        .indicator-label {
+            color: #00ccff;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .indicator-value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .sentiment-bar {
+            width: 100%;
+            height: 30px;
+            background: linear-gradient(to right, #ff0000 0%, #ffff00 50%, #00ff00 100%);
+            border-radius: 5px;
+            position: relative;
+            margin-top: 10px;
+        }
+
+        .sentiment-marker {
+            position: absolute;
+            width: 4px;
+            height: 100%;
+            background: #fff;
+            box-shadow: 0 0 10px #fff;
+            transition: left 0.5s;
+        }
+
+        /* Right Column - Symbol Cards */
+        .symbols-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .symbol-card {
+            background: linear-gradient(135deg, #1a1f3a 0%, #2a2f4a 100%);
+            border: 2px solid #00ccff;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .symbol-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 204, 255, 0.4);
+        }
+
+        .symbol-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .symbol-name {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #00ccff;
+        }
+
+        .symbol-price {
+            font-size: 1.4em;
+            color: #fff;
+        }
+
+        .ml-section {
+            margin: 15px 0;
+        }
+
+        .ml-decision {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .decision-BUY {
+            color: #00ff00;
+        }
+
+        .decision-SELL {
+            color: #ff0000;
+        }
+
+        .decision-HOLD {
+            color: #ffaa00;
+        }
+
+        .confidence-bar {
+            width: 100%;
+            height: 25px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88 0%, #00ccff 100%);
+            transition: width 0.5s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: bold;
+        }
+
+        .gatekeeper-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .status-PASS {
+            background: rgba(0, 255, 0, 0.2);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+        }
+
+        .status-BLOCK {
+            background: rgba(255, 0, 0, 0.2);
+            border: 2px solid #ff0000;
+            color: #ff0000;
+        }
+
+        /* System Status */
+        .system-status {
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid #00ff88;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 30px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+
+        .status-item {
+            text-align: center;
+        }
+
+        .status-label {
+            color: #00ccff;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .status-value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 10px;
+        }
+
+        .indicator-active {
+            background: #00ff00;
+            box-shadow: 0 0 15px #00ff00;
+            animation: blink 1s infinite;
+        }
+
+        .indicator-inactive {
+            background: #ff0000;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .regime-display {
+                font-size: 2.5em;
+            }
+            
+            .symbols-section {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🧠 NEURAL HUD</h1>
+            <div class="subtitle">Real-Time AI Decision Visualization</div>
+        </div>
+
+        <!-- Strategic Brain (Генерал) -->
+        <div class="strategic-section">
+            <div class="strategic-title">⚔️ STRATEGIC BRAIN (GENERAL)</div>
+            <div id="regime-display" class="regime-display regime-SIDEWAYS">
+                INITIALIZING...
+            </div>
+            <div id="regime-reason" class="regime-reason">
+                Waiting for market analysis...
+            </div>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="grid">
+            <!-- Left Column - Market Indicators -->
+            <div class="indicators-section">
+                <div class="section-title">📊 MARKET INDICATORS</div>
+                
+                <!-- News Sentiment -->
+                <div class="indicator-card">
+                    <div class="indicator-label">📰 News Sentiment</div>
+                    <div id="news-sentiment" class="indicator-value">0.00</div>
+                    <div class="sentiment-bar">
+                        <div id="sentiment-marker" class="sentiment-marker" style="left: 50%;"></div>
+                    </div>
+                    <div id="latest-headline" style="margin-top: 10px; color: #00ccff; font-size: 0.9em;">
+                        No news yet
+                    </div>
+                </div>
+
+                <!-- System Status -->
+                <div class="indicator-card">
+                    <div class="indicator-label">🤖 Bot Status</div>
+                    <div id="bot-status" class="indicator-value">
+                        <span class="status-indicator indicator-inactive"></span>
+                        OFFLINE
+                    </div>
+                </div>
+
+                <!-- Last Scan -->
+                <div class="indicator-card">
+                    <div class="indicator-label">⏱️ Last Scan</div>
+                    <div id="last-scan" class="indicator-value">--:--:--</div>
+                </div>
+
+                <!-- Total Decisions -->
+                <div class="indicator-card">
+                    <div class="indicator-label">🎯 Total Decisions</div>
+                    <div id="total-decisions" class="indicator-value">0</div>
+                </div>
+
+                <!-- Active Positions -->
+                <div class="indicator-card">
+                    <div class="indicator-label">📈 Active Positions</div>
+                    <div id="active-positions" class="indicator-value">0</div>
+                </div>
+            </div>
+
+            <!-- Right Column - Symbol Cards -->
+            <div>
+                <div class="section-title">💎 TRADING PAIRS</div>
+                <div id="symbols-grid" class="symbols-section">
+                    <!-- Symbol cards will be inserted here by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- System Status Footer -->
+        <div class="system-status">
+            <div class="status-item">
+                <div class="status-label">Last Update</div>
+                <div id="last-update" class="status-value">--:--:--</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Refresh Rate</div>
+                <div class="status-value">2s</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Data Source</div>
+                <div class="status-value">In-Memory</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Trading pairs to monitor
+        const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT'];
+
+        // Update data every 2 seconds
+        setInterval(updateData, 2000);
+        updateData(); // Initial load
+
+        async function updateData() {
+            try {
+                const response = await fetch('/api/brain_live');
+                const data = await response.json();
+                
+                // Update Strategic Brain
+                updateStrategicBrain(data.strategic);
+                
+                // Update News
+                updateNews(data.news);
+                
+                // Update System Status
+                updateSystemStatus(data.system);
+                
+                // Update Symbol Cards
+                updateSymbols(data);
+                
+                // Update last update time
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        function updateStrategicBrain(strategic) {
+            const regimeDisplay = document.getElementById('regime-display');
+            const regimeReason = document.getElementById('regime-reason');
+            
+            const regime = strategic.regime || 'SIDEWAYS';
+            const reason = strategic.reason || 'Analyzing market...';
+            
+            regimeDisplay.textContent = regime.replace('_', ' ');
+            regimeDisplay.className = `regime-display regime-${regime}`;
+            regimeReason.textContent = reason;
+        }
+
+        function updateNews(news) {
+            const sentiment = news.sentiment || 0;
+            const headline = news.latest_headline || 'No news yet';
+            const count = news.count || 0;
+            
+            document.getElementById('news-sentiment').textContent = sentiment.toFixed(2);
+            document.getElementById('latest-headline').textContent = `${headline} (${count} news)`;
+            
+            // Update sentiment marker (convert -1 to +1 range to 0-100%)
+            const markerPosition = ((sentiment + 1) / 2) * 100;
+            document.getElementById('sentiment-marker').style.left = `${markerPosition}%`;
+        }
+
+        function updateSystemStatus(system) {
+            const botRunning = system.bot_running || false;
+            const lastScan = system.last_scan || null;
+            const totalDecisions = system.total_decisions || 0;
+            
+            // Bot status
+            const botStatusEl = document.getElementById('bot-status');
+            if (botRunning) {
+                botStatusEl.innerHTML = '<span class="status-indicator indicator-active"></span> ACTIVE';
+            } else {
+                botStatusEl.innerHTML = '<span class="status-indicator indicator-inactive"></span> OFFLINE';
+            }
+            
+            // Last scan
+            if (lastScan) {
+                const scanTime = new Date(lastScan);
+                document.getElementById('last-scan').textContent = scanTime.toLocaleTimeString();
+            }
+            
+            // Total decisions
+            document.getElementById('total-decisions').textContent = totalDecisions;
+        }
+
+        function updateSymbols(data) {
+            const symbolsGrid = document.getElementById('symbols-grid');
+            const market = data.market || {};
+            const mlPredictions = data.ml_predictions || {};
+            const gatekeeper = data.gatekeeper || {};
+            const positions = data.positions || {};
+            
+            // Update active positions count
+            document.getElementById('active-positions').textContent = positions.count || 0;
+            
+            // Create/update symbol cards
+            symbolsGrid.innerHTML = '';
+            
+            SYMBOLS.forEach(symbol => {
+                const card = createSymbolCard(
+                    symbol,
+                    market.current_prices?.[symbol] || 0,
+                    market.rsi_values?.[symbol] || 50,
+                    market.chop_index?.[symbol] || 50,
+                    mlPredictions[symbol] || {},
+                    gatekeeper[symbol] || 'UNKNOWN',
+                    positions.active?.includes(symbol) || false
+                );
+                symbolsGrid.appendChild(card);
+            });
+        }
+
+        function createSymbolCard(symbol, price, rsi, chop, mlPrediction, gatekeeperStatus, hasPosition) {
+            const card = document.createElement('div');
+            card.className = 'symbol-card';
+            
+            const decision = mlPrediction.decision || 'HOLD';
+            const confidence = mlPrediction.confidence || 0;
+            const changePct = mlPrediction.change_pct || 0;
+            
+            const isPass = !gatekeeperStatus.startsWith('BLOCK');
+            const statusClass = isPass ? 'status-PASS' : 'status-BLOCK';
+            const statusText = isPass ? '✅ PASS' : gatekeeperStatus;
+            
+            card.innerHTML = `
+                <div class="symbol-header">
+                    <div class="symbol-name">${symbol.replace('USDT', '')}</div>
+                    <div class="symbol-price">$${price.toFixed(2)}</div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                    <div>
+                        <div style="color: #00ccff; font-size: 0.8em;">RSI</div>
+                        <div style="font-size: 1.2em; font-weight: bold;">${rsi.toFixed(1)}</div>
+                    </div>
+                    <div>
+                        <div style="color: #00ccff; font-size: 0.8em;">CHOP</div>
+                        <div style="font-size: 1.2em; font-weight: bold;">${chop.toFixed(1)}</div>
+                    </div>
+                </div>
+                
+                <div class="ml-section">
+                    <div class="ml-decision decision-${decision}">
+                        ${decision} ${changePct > 0 ? '+' : ''}${changePct.toFixed(2)}%
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: ${confidence * 100}%">
+                            ${(confidence * 100).toFixed(0)}%
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="gatekeeper-status ${statusClass}">
+                    ${statusText}
+                </div>
+                
+                ${hasPosition ? '<div style="text-align: center; margin-top: 10px; color: #ffaa00; font-weight: bold;">📈 POSITION OPEN</div>' : ''}
+            `;
+            
+            return card;
+        }
+    </script>
+</body>
+</html>

@@ -797,5 +797,31 @@ def get_data():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/brain')
+def neural_hud():
+    """Neural HUD - Визуализация мозга бота"""
+    return render_template('brain.html')
+
+@app.route('/api/brain_live')
+def get_brain_live():
+    """API для Neural HUD - данные из оперативной памяти (GlobalBrainState)"""
+    try:
+        from core.state import get_global_brain_state
+        
+        state = get_global_brain_state()
+        data = state.to_dict()
+        
+        response = jsonify(data)
+        
+        # Отключаем кэширование для real-time данных
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        return response
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
