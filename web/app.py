@@ -384,72 +384,86 @@ def index_v1():
     return render_template('dashboard.html')
 
 async def get_futures_positions():
-    """Получить открытые фьючерсные позиции с Bybit API + количество ордеров из БД"""
+    """Получить открытые фьючерсные позиции ИЗ БД (не с биржи!)"""
     try:
         from core.bybit_api import BybitAPI
         from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
         from config import settings
         
         api = BybitAPI()
-        positions = await api.get_positions()
-        
-        # Получаем количество ордеров из БД для каждого символа
         engine = create_async_engine(settings.database_url, echo=False)
         session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         
-        async with session_maker() as session:
-            orders_count_result = await session.execute(
-                select(Trade.symbol, Trade.side, func.count(Trade.id).label('count'))
-                .where(Trade.status == TradeStatus.OPEN, Trade.market_type == 'futures')
-                .group_by(Trade.symbol, Trade.side)
-            )
-            orders_count = {(row.symbol, row.side.value): row.count for row in orders_count_result}
-        
         result = []
-        for pos in positions:
-            size = float(pos.get('size', 0))
-            if size > 0:
-                # API возвращает entry_price (уже преобразовано в get_positions)
-                entry_price = float(pos.get('entry_price', 0))
-                side = pos.get('side', 'Buy')
-                leverage = pos.get('leverage', '1')
-                unrealized_pnl = float(pos.get('unrealized_pnl', 0))
-                symbol = pos.get('symbol', '')
+        
+        async with session_maker() as session:
+            # Получаем открытые позиции ИЗ БД
+            trades_result = await session.execute(
+                select(Trade).where(
+                    Trade.status == TradeStatus.OPEN,
+                    Trade.market_type == 'futures'
+                )
+            )
+            open_trades = trades_result.scalars().all()
+            
+            # Группируем по символу и стороне
+            positions_map = {}
+            for trade in open_trades:
+                key = (trade.symbol, trade.side.value)
+                if key not in positions_map:
+                    positions_map[key] = {
+                        'symbol': trade.symbol,
+                        'side': trade.side.value,
+                        'total_qty': 0,
+                        'total_cost': 0,
+                        'orders_count': 0,
+                        'leverage': settings.futures_leverage
+                    }
                 
-                # Получаем текущую цену для mark_price
+                positions_map[key]['total_qty'] += float(trade.quantity)
+                positions_map[key]['total_cost'] += float(trade.entry_price * trade.quantity)
+                positions_map[key]['orders_count'] += 1
+            
+            # Формируем результат
+            for pos_data in positions_map.values():
+                symbol = pos_data['symbol']
+                total_qty = pos_data['total_qty']
+                avg_entry_price = pos_data['total_cost'] / total_qty if total_qty > 0 else 0
+                
+                # Получаем текущую цену
                 try:
                     ticker = await api.get_ticker(symbol)
                     if ticker:
                         mark_price = float(ticker.get('lastPrice') or ticker.get('last_price', 0))
                     else:
-                        mark_price = entry_price
+                        mark_price = avg_entry_price
                 except:
-                    mark_price = entry_price
+                    mark_price = avg_entry_price
                 
-                # Рассчитываем PnL %
-                if entry_price > 0:
-                    if side == 'Buy':
-                        pnl_pct = ((mark_price - entry_price) / entry_price * 100)
-                    else:  # Sell/Short
-                        pnl_pct = ((entry_price - mark_price) / entry_price * 100)
+                # Рассчитываем PnL
+                if avg_entry_price > 0:
+                    if pos_data['side'] == 'BUY':
+                        pnl_pct = ((mark_price - avg_entry_price) / avg_entry_price * 100)
+                        unrealized_pnl = (mark_price - avg_entry_price) * total_qty
+                    else:  # SELL
+                        pnl_pct = ((avg_entry_price - mark_price) / avg_entry_price * 100)
+                        unrealized_pnl = (avg_entry_price - mark_price) * total_qty
                 else:
                     pnl_pct = 0
-                
-                # Получаем количество ордеров из БД
-                side_str = 'BUY' if side == 'Buy' else 'SELL'
-                orders_in_db = orders_count.get((symbol, side_str), 1)
+                    unrealized_pnl = 0
                 
                 result.append({
                     'symbol': symbol,
-                    'side': 'LONG' if side == 'Buy' else 'SHORT',
-                    'size': size,
-                    'entry_price': entry_price,
+                    'side': 'LONG' if pos_data['side'] == 'BUY' else 'SHORT',
+                    'size': total_qty,
+                    'entry_price': avg_entry_price,
                     'mark_price': mark_price,
-                    'leverage': leverage,
+                    'leverage': str(pos_data['leverage']),
                     'unrealized_pnl': unrealized_pnl,
                     'pnl_pct': pnl_pct,
-                    'orders_count': orders_in_db
+                    'orders_count': pos_data['orders_count']
                 })
+        
         return result
     except Exception as e:
         print(f"❌ Error getting futures positions: {e}")
@@ -804,11 +818,15 @@ def neural_hud():
 
 @app.route('/api/brain_live')
 def get_brain_live():
-    """API для Neural HUD - данные из оперативной памяти (GlobalBrainState)"""
+    """API для Neural HUD - данные из shared file (между контейнерами)"""
     try:
         from core.state import get_global_brain_state
         
         state = get_global_brain_state()
+        
+        # Загружаем свежие данные из файла (обновляется ботом)
+        state.load_from_file()
+        
         data = state.to_dict()
         
         response = jsonify(data)

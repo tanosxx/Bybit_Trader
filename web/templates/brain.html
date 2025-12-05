@@ -24,32 +24,7 @@
             padding: 20px;
         }
 
-        /* Header */
-        .header {
-            text-align: center;
-            padding: 30px 0;
-            border-bottom: 2px solid #00ff88;
-            margin-bottom: 30px;
-            background: rgba(0, 255, 136, 0.05);
-            border-radius: 10px;
-        }
-
-        .header h1 {
-            font-size: 3em;
-            text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-
-        .header .subtitle {
-            color: #00ccff;
-            font-size: 1.2em;
-            margin-top: 10px;
-        }
+        /* Header - REMOVED */
 
         /* Strategic Brain (Генерал) */
         .strategic-section {
@@ -71,11 +46,11 @@
 
         .regime-display {
             text-align: center;
-            font-size: 4em;
+            font-size: 2.5em;
             font-weight: bold;
-            padding: 30px;
+            padding: 20px;
             border-radius: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         .regime-BULL_RUSH {
@@ -103,12 +78,7 @@
         }
 
         .regime-reason {
-            text-align: center;
-            color: #00ccff;
-            font-size: 1.2em;
-            padding: 15px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
+            display: none; /* HIDDEN - убираем дублирование */
         }
 
         /* Grid Layout */
@@ -271,6 +241,52 @@
             color: #ff0000;
         }
 
+        /* Decision Reasoning */
+        .reasoning-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border-left: 4px solid #00ccff;
+        }
+
+        .reasoning-title {
+            color: #00ccff;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .reasoning-item {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .reasoning-item:last-child {
+            border-bottom: none;
+        }
+
+        .reasoning-label {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .reasoning-value {
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        .filter-pass {
+            color: #00ff00;
+        }
+
+        .filter-fail {
+            color: #ff0000;
+        }
+
         /* System Status */
         .system-status {
             background: rgba(0, 0, 0, 0.4);
@@ -321,6 +337,191 @@
             50% { opacity: 0.5; }
         }
 
+        /* AI Reasoning Panel */
+        .ai-reasoning-section {
+            background: linear-gradient(135deg, #1a1f3a 0%, #2a2f4a 100%);
+            border: 2px solid #00ccff;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 30px rgba(0, 204, 255, 0.3);
+        }
+
+        .reasoning-title {
+            font-size: 1.8em;
+            color: #00ccff;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #00ccff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .reasoning-content {
+            background: rgba(0, 0, 0, 0.4);
+            border-left: 4px solid #00ccff;
+            padding: 20px;
+            border-radius: 8px;
+            line-height: 1.8;
+            color: #00ff88;
+            font-size: 1.1em;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .reasoning-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .reasoning-content::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+        }
+
+        .reasoning-content::-webkit-scrollbar-thumb {
+            background: #00ccff;
+            border-radius: 4px;
+        }
+
+        .news-analysis {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(0, 204, 255, 0.3);
+        }
+
+        /* Decision Flow Diagram */
+        .decision-flow-section {
+            background: linear-gradient(135deg, #1a1f3a 0%, #2a2f4a 100%);
+            border: 2px solid #ff00ff;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
+        }
+
+        .flow-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 10px;
+            border-left: 4px solid #888;
+            transition: all 0.3s;
+        }
+
+        .flow-step.pass {
+            border-left-color: #00ff00;
+            background: rgba(0, 255, 0, 0.1);
+        }
+
+        .flow-step.fail {
+            border-left-color: #ff0000;
+            background: rgba(255, 0, 0, 0.1);
+        }
+
+        .flow-step.pending {
+            border-left-color: #888;
+            opacity: 0.5;
+        }
+
+        .flow-step.skip {
+            border-left-color: #ffaa00;
+            background: rgba(255, 170, 0, 0.1);
+        }
+
+        .step-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #00ccff;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #00ff88;
+            margin-bottom: 5px;
+        }
+
+        .step-result {
+            font-size: 0.9em;
+            color: #888;
+        }
+
+        .step-status {
+            font-size: 1.5em;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        .step-time {
+            font-size: 0.8em;
+            color: #00ccff;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .flow-arrow {
+            text-align: center;
+            font-size: 2em;
+            color: #00ccff;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .final-decision {
+            margin-top: 20px;
+            padding: 25px;
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(0, 204, 255, 0.2) 100%);
+            border: 3px solid #00ff88;
+            border-radius: 15px;
+            text-align: center;
+        }
+
+        .final-decision.action-BUY {
+            border-color: #00ff00;
+            background: linear-gradient(135deg, rgba(0, 255, 0, 0.2) 0%, rgba(0, 255, 136, 0.2) 100%);
+        }
+
+        .final-decision.action-SELL {
+            border-color: #ff0000;
+            background: linear-gradient(135deg, rgba(255, 0, 0, 0.2) 0%, rgba(255, 136, 0, 0.2) 100%);
+        }
+
+        .final-decision.action-SKIP {
+            border-color: #888;
+            background: linear-gradient(135deg, rgba(136, 136, 136, 0.2) 0%, rgba(68, 68, 68, 0.2) 100%);
+        }
+
+        .decision-action {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .decision-reason {
+            font-size: 1.2em;
+            color: #00ccff;
+        }
+
         /* Responsive */
         @media (max-width: 1200px) {
             .grid {
@@ -340,16 +541,20 @@
             .symbols-section {
                 grid-template-columns: 1fr;
             }
+
+            .flow-step {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .step-time {
+                text-align: center;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>🧠 NEURAL HUD</h1>
-            <div class="subtitle">Real-Time AI Decision Visualization</div>
-        </div>
 
         <!-- Strategic Brain (Генерал) -->
         <div class="strategic-section">
@@ -395,16 +600,31 @@
                     <div id="last-scan" class="indicator-value">--:--:--</div>
                 </div>
 
-                <!-- Total Decisions -->
+                <!-- News Count -->
                 <div class="indicator-card">
-                    <div class="indicator-label">🎯 Total Decisions</div>
-                    <div id="total-decisions" class="indicator-value">0</div>
+                    <div class="indicator-label">📰 News Count</div>
+                    <div id="news-count" class="indicator-value">0</div>
                 </div>
 
-                <!-- Active Positions -->
+                <!-- ML Model Status -->
                 <div class="indicator-card">
-                    <div class="indicator-label">📈 Active Positions</div>
-                    <div id="active-positions" class="indicator-value">0</div>
+                    <div class="indicator-label">🤖 ML Model</div>
+                    <div id="ml-status" class="indicator-value">
+                        <span class="status-indicator indicator-active"></span>
+                        LSTM v2
+                    </div>
+                </div>
+
+                <!-- Gatekeeper Status -->
+                <div class="indicator-card">
+                    <div class="indicator-label">🛡️ Gatekeeper</div>
+                    <div id="gatekeeper-summary" class="indicator-value">0/5 PASS</div>
+                </div>
+
+                <!-- Decision Cycle -->
+                <div class="indicator-card">
+                    <div class="indicator-label">🔄 Cycle Time</div>
+                    <div id="cycle-time" class="indicator-value">~60s</div>
                 </div>
             </div>
 
@@ -414,6 +634,38 @@
                 <div id="symbols-grid" class="symbols-section">
                     <!-- Symbol cards will be inserted here by JS -->
                 </div>
+            </div>
+        </div>
+
+        <!-- AI Reasoning Panel -->
+        <div class="ai-reasoning-section">
+            <div class="reasoning-title">
+                🧠 AI REASONING - Strategic Brain Analysis
+            </div>
+            <div id="strategic-reasoning" class="reasoning-content">
+                Waiting for Strategic Brain analysis...
+            </div>
+            <div class="news-analysis">
+                <div class="reasoning-title">
+                    📰 NEWS ANALYSIS
+                </div>
+                <div id="news-reasoning" class="reasoning-content">
+                    No news analysis yet...
+                </div>
+            </div>
+        </div>
+
+        <!-- Decision Flow Diagram -->
+        <div class="decision-flow-section">
+            <div class="reasoning-title">
+                🔄 DECISION FLOW - Complete Trading Logic
+            </div>
+            <div class="flow-diagram" id="flow-diagram">
+                <!-- Steps will be inserted by JavaScript -->
+            </div>
+            <div id="final-decision-box" class="final-decision action-SKIP">
+                <div class="decision-action">⏸️ SKIP</div>
+                <div class="decision-reason">Not analyzed yet</div>
             </div>
         </div>
 
@@ -456,8 +708,14 @@
                 // Update System Status
                 updateSystemStatus(data.system);
                 
-                // Update Symbol Cards
+                // Update Symbol Cards (with reasoning)
                 updateSymbols(data);
+                
+                // Update AI Reasoning
+                updateAIReasoning(data.ai_reasoning || {});
+                
+                // Update Decision Flow
+                updateDecisionFlow(data.decision_flow || {});
                 
                 // Update last update time
                 document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
@@ -485,7 +743,8 @@
             const count = news.count || 0;
             
             document.getElementById('news-sentiment').textContent = sentiment.toFixed(2);
-            document.getElementById('latest-headline').textContent = `${headline} (${count} news)`;
+            document.getElementById('latest-headline').textContent = headline;
+            document.getElementById('news-count').textContent = count;
             
             // Update sentiment marker (convert -1 to +1 range to 0-100%)
             const markerPosition = ((sentiment + 1) / 2) * 100;
@@ -495,7 +754,6 @@
         function updateSystemStatus(system) {
             const botRunning = system.bot_running || false;
             const lastScan = system.last_scan || null;
-            const totalDecisions = system.total_decisions || 0;
             
             // Bot status
             const botStatusEl = document.getElementById('bot-status');
@@ -510,9 +768,66 @@
                 const scanTime = new Date(lastScan);
                 document.getElementById('last-scan').textContent = scanTime.toLocaleTimeString();
             }
+        }
+
+        function updatePerformance(performance) {
+            const winRate = performance.win_rate || 0;
+            const totalPnl = performance.total_pnl || 0;
+            const currentBalance = performance.current_balance || 0;
+            const performance24h = performance.performance_24h || 0;
             
-            // Total decisions
-            document.getElementById('total-decisions').textContent = totalDecisions;
+            // Win Rate
+            const winRateEl = document.getElementById('win-rate');
+            winRateEl.textContent = `${winRate.toFixed(1)}%`;
+            winRateEl.style.color = winRate >= 50 ? '#00ff00' : (winRate >= 30 ? '#ffaa00' : '#ff0000');
+            
+            // Total PnL
+            const totalPnlEl = document.getElementById('total-pnl');
+            totalPnlEl.textContent = `$${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}`;
+            totalPnlEl.style.color = totalPnl >= 0 ? '#00ff00' : '#ff0000';
+            
+            // Current Balance
+            document.getElementById('current-balance').textContent = `$${currentBalance.toFixed(2)}`;
+            
+            // 24h Performance
+            const perf24hEl = document.getElementById('performance-24h');
+            perf24hEl.textContent = `$${performance24h >= 0 ? '+' : ''}${performance24h.toFixed(2)}`;
+            perf24hEl.style.color = performance24h >= 0 ? '#00ff00' : '#ff0000';
+        }
+
+        function updateRecentTrades(trades) {
+            const container = document.getElementById('recent-trades');
+            
+            if (!trades || trades.length === 0) {
+                container.innerHTML = '<div style="color: #888; text-align: center;">No trades yet...</div>';
+                return;
+            }
+            
+            let html = '<div style="display: grid; gap: 10px;">';
+            trades.forEach(trade => {
+                const pnl = trade.pnl || 0;
+                const pnlColor = pnl >= 0 ? '#00ff00' : '#ff0000';
+                const pnlSign = pnl >= 0 ? '+' : '';
+                const time = trade.time ? new Date(trade.time).toLocaleTimeString() : '--:--';
+                
+                html += `
+                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border-left: 4px solid ${pnlColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="font-size: 1.2em; color: #00ccff;">${trade.symbol || 'UNKNOWN'}</span>
+                                <span style="margin-left: 10px; color: ${trade.side === 'BUY' ? '#00ff00' : '#ff0000'};">${trade.side || 'N/A'}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 1.3em; color: ${pnlColor}; font-weight: bold;">${pnlSign}$${Math.abs(pnl).toFixed(2)}</div>
+                                <div style="font-size: 0.9em; color: #888;">${time}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
         }
 
         function updateSymbols(data) {
@@ -521,28 +836,41 @@
             const mlPredictions = data.ml_predictions || {};
             const gatekeeper = data.gatekeeper || {};
             const positions = data.positions || {};
+            const reasoning = data.decision_reasoning || {};
             
-            // Update active positions count
-            document.getElementById('active-positions').textContent = positions.count || 0;
+            // Update gatekeeper summary
+            const gatekeeperValues = Object.values(gatekeeper);
+            const passCount = gatekeeperValues.filter(status => !status.startsWith('BLOCK')).length;
+            const totalCount = SYMBOLS.length;
+            const gatekeeperSummaryEl = document.getElementById('gatekeeper-summary');
+            if (gatekeeperSummaryEl) {
+                gatekeeperSummaryEl.textContent = `${passCount}/${totalCount} PASS`;
+                gatekeeperSummaryEl.style.color = passCount > 0 ? '#00ff00' : '#ff0000';
+            }
             
             // Create/update symbol cards
             symbolsGrid.innerHTML = '';
             
             SYMBOLS.forEach(symbol => {
+                const currentPrices = market.current_prices || {};
+                const rsiValues = market.rsi_values || {};
+                const chopIndex = market.chop_index || {};
+                
                 const card = createSymbolCard(
                     symbol,
-                    market.current_prices?.[symbol] || 0,
-                    market.rsi_values?.[symbol] || 50,
-                    market.chop_index?.[symbol] || 50,
+                    currentPrices[symbol] || 0,
+                    rsiValues[symbol] || 50,
+                    chopIndex[symbol] || 50,
                     mlPredictions[symbol] || {},
                     gatekeeper[symbol] || 'UNKNOWN',
-                    positions.active?.includes(symbol) || false
+                    (positions.active || []).includes(symbol),
+                    reasoning[symbol] || null
                 );
                 symbolsGrid.appendChild(card);
             });
         }
 
-        function createSymbolCard(symbol, price, rsi, chop, mlPrediction, gatekeeperStatus, hasPosition) {
+        function createSymbolCard(symbol, price, rsi, chop, mlPrediction, gatekeeperStatus, hasPosition, reasoning) {
             const card = document.createElement('div');
             card.className = 'symbol-card';
             
@@ -553,6 +881,46 @@
             const isPass = !gatekeeperStatus.startsWith('BLOCK');
             const statusClass = isPass ? 'status-PASS' : 'status-BLOCK';
             const statusText = isPass ? '✅ PASS' : gatekeeperStatus;
+            
+            // Build reasoning HTML
+            let reasoningHTML = '';
+            if (reasoning) {
+                reasoningHTML = `
+                    <div class="reasoning-section">
+                        <div class="reasoning-title">🧠 Decision Process</div>
+                        ${reasoning.chop_filter !== undefined ? `
+                            <div class="reasoning-item">
+                                <span class="reasoning-label">CHOP Filter:</span>
+                                <span class="reasoning-value ${reasoning.chop_filter ? 'filter-pass' : 'filter-fail'}">
+                                    ${reasoning.chop_filter ? '✅ PASS' : '❌ FAIL'}
+                                </span>
+                            </div>
+                        ` : ''}
+                        ${reasoning.pattern_filter !== undefined ? `
+                            <div class="reasoning-item">
+                                <span class="reasoning-label">Pattern Filter:</span>
+                                <span class="reasoning-value ${reasoning.pattern_filter ? 'filter-pass' : 'filter-fail'}">
+                                    ${reasoning.pattern_filter ? '✅ PASS' : '❌ FAIL'}
+                                </span>
+                            </div>
+                        ` : ''}
+                        ${reasoning.ml_confidence !== undefined ? `
+                            <div class="reasoning-item">
+                                <span class="reasoning-label">ML Confidence:</span>
+                                <span class="reasoning-value">${(reasoning.ml_confidence * 100).toFixed(0)}%</span>
+                            </div>
+                        ` : ''}
+                        ${reasoning.ta_confirmation !== undefined ? `
+                            <div class="reasoning-item">
+                                <span class="reasoning-label">TA Confirmation:</span>
+                                <span class="reasoning-value ${reasoning.ta_confirmation ? 'filter-pass' : 'filter-fail'}">
+                                    ${reasoning.ta_confirmation ? '✅ YES' : '❌ NO'}
+                                </span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
             
             card.innerHTML = `
                 <div class="symbol-header">
@@ -586,10 +954,88 @@
                     ${statusText}
                 </div>
                 
+                ${reasoningHTML}
+                
                 ${hasPosition ? '<div style="text-align: center; margin-top: 10px; color: #ffaa00; font-weight: bold;">📈 POSITION OPEN</div>' : ''}
             `;
             
             return card;
+        }
+
+        function updateAIReasoning(aiReasoning) {
+            const strategicText = aiReasoning.strategic_text || 'Waiting for Strategic Brain analysis...';
+            const newsText = aiReasoning.news_analysis || 'No news analysis yet...';
+            
+            document.getElementById('strategic-reasoning').textContent = strategicText;
+            document.getElementById('news-reasoning').textContent = newsText;
+        }
+
+        function updateDecisionFlow(decisionFlow) {
+            const flowDiagram = document.getElementById('flow-diagram');
+            
+            const steps = [
+                { key: 'step_0_strategic', name: 'Strategic Brain', desc: 'Market regime analysis (Claude/Gemini)' },
+                { key: 'step_1_trading_hours', name: 'Trading Hours Check', desc: '24/7 trading enabled' },
+                { key: 'step_2_chop_filter', name: 'CHOP Filter', desc: 'Gatekeeper Level 1: Sideways market detection' },
+                { key: 'step_3_pattern_filter', name: 'Pattern Filter', desc: 'Gatekeeper Level 2: Historical win rate analysis' },
+                { key: 'step_4_ml_confidence', name: 'ML Confidence', desc: 'LSTM v2 + Self-Learning prediction' },
+                { key: 'step_5_fee_check', name: 'Fee Profitability', desc: 'Ensure profit > 2× fees' },
+                { key: 'step_6_futures_brain', name: 'Futures Brain', desc: 'Multi-agent consensus (3/6 score)' }
+            ];
+            
+            let html = '';
+            
+            steps.forEach((step, index) => {
+                const stepData = decisionFlow[step.key] || { status: 'pending', result: null, time_ms: 0 };
+                const status = stepData.status || 'pending';
+                const result = stepData.result || 'Waiting...';
+                const timeMs = stepData.time_ms || 0;
+                
+                let statusIcon = '⏳';
+                if (status === 'pass') statusIcon = '✅';
+                else if (status === 'fail') statusIcon = '❌';
+                else if (status === 'skip') statusIcon = '⏭️';
+                
+                html += `
+                    <div class="flow-step ${status}">
+                        <div class="step-number">${index}</div>
+                        <div class="step-content">
+                            <div class="step-name">${step.name}</div>
+                            <div class="step-result">${step.desc}</div>
+                            ${result !== 'Waiting...' ? `<div class="step-result" style="color: #00ccff; margin-top: 5px;">→ ${result}</div>` : ''}
+                        </div>
+                        <div class="step-status">${statusIcon}</div>
+                        ${timeMs > 0 ? `<div class="step-time">${timeMs.toFixed(0)}ms</div>` : ''}
+                    </div>
+                `;
+                
+                if (index < steps.length - 1) {
+                    html += '<div class="flow-arrow">↓</div>';
+                }
+            });
+            
+            flowDiagram.innerHTML = html;
+            
+            // Update final decision
+            const finalDecision = decisionFlow.final_decision || { action: 'SKIP', reason: 'Not analyzed yet' };
+            const finalBox = document.getElementById('final-decision-box');
+            
+            finalBox.className = `final-decision action-${finalDecision.action}`;
+            
+            let actionIcon = '⏸️';
+            let actionColor = '#888';
+            if (finalDecision.action === 'BUY') {
+                actionIcon = '🚀';
+                actionColor = '#00ff00';
+            } else if (finalDecision.action === 'SELL') {
+                actionIcon = '📉';
+                actionColor = '#ff0000';
+            }
+            
+            finalBox.innerHTML = `
+                <div class="decision-action" style="color: ${actionColor};">${actionIcon} ${finalDecision.action}</div>
+                <div class="decision-reason">${finalDecision.reason}</div>
+            `;
         }
     </script>
 </body>

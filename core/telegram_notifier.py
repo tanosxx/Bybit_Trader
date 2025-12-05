@@ -297,6 +297,36 @@ class TelegramReporter:
         
         await self.send_message(message)
     
+    async def notify_strategic_compliance(
+        self,
+        regime: str,
+        positions_closed: int
+    ):
+        """🚨 Strategic Compliance - Forced Position Closure"""
+        regime_emoji = {
+            'UNCERTAIN': '⚠️',
+            'BEAR_CRASH': '🐻',
+            'BULL_RUSH': '🚀',
+            'SIDEWAYS': '↔️'
+        }.get(regime, '❓')
+        
+        regime_desc = {
+            'UNCERTAIN': 'High volatility - Cash is King',
+            'BEAR_CRASH': 'Bear market - LONG positions closed',
+            'BULL_RUSH': 'Bull market - SHORT positions closed',
+            'SIDEWAYS': 'Range-bound market'
+        }.get(regime, 'Unknown regime')
+        
+        message = f"""🚨 <b>STRATEGIC COMPLIANCE</b>
+
+{regime_emoji} Regime: <b>{regime}</b>
+📝 {regime_desc}
+
+🔒 Closed: <b>{positions_closed}</b> position(s)
+💡 Reason: Non-compliant with current strategy"""
+        
+        await self.send_message(message)
+    
     # ========== LEGACY COMPATIBILITY ==========
     
     async def notify_futures_opened(self, **kwargs):

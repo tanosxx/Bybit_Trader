@@ -478,14 +478,15 @@ class LocalBrain:
                             interval='D',  # Дневные свечи
                             limit=7
                         )
+                        # get_klines возвращает список словарей
                         for candle in candles_data:
                             daily_candles.append({
                                 'symbol': major_symbol,
-                                'open': float(candle[1]),
-                                'high': float(candle[2]),
-                                'low': float(candle[3]),
-                                'close': float(candle[4]),
-                                'volume': float(candle[5])
+                                'open': candle['open'],
+                                'high': candle['high'],
+                                'low': candle['low'],
+                                'close': candle['close'],
+                                'volume': candle['volume']
                             })
                     except Exception as e:
                         print(f"   ⚠️ Failed to get daily candles for {major_symbol}: {e}")
@@ -500,9 +501,13 @@ class LocalBrain:
             
             # Запрашиваем режим у Strategic Brain
             if daily_candles:
+                # Получаем текущую цену BTC для триггера
+                current_btc_price = market_data.get('price') if symbol == 'BTCUSDT' else None
+                
                 strategic_regime = await self.strategic_brain.get_market_regime(
                     daily_candles=daily_candles,
-                    news_summary=news_summary
+                    news_summary=news_summary,
+                    current_btc_price=current_btc_price
                 )
                 print(f"   🎯 Strategic Regime: {strategic_regime}")
         except Exception as e:
@@ -590,6 +595,30 @@ class LocalBrain:
                     headline=headline,
                     count=news_data.get('news_count', 0)
                 )
+                
+                # Формируем текст анализа новостей для Neural HUD
+                news_analysis = f"""📰 NEWS ANALYSIS ({symbol})
+
+Sentiment Score: {news_data['score']:.3f} ({sentiment.value})
+News Count: {news_data.get('news_count', 0)} articles analyzed
+
+Recommendation:
+{news_data.get('recommendation', 'No significant news')}
+
+Impact Assessment:
+"""
+                if sentiment == MarketSentiment.EXTREME_FEAR:
+                    news_analysis += "🚨 EXTREME FEAR - High risk of panic selling\n→ Consider closing positions or avoiding new entries"
+                elif sentiment == MarketSentiment.FEAR:
+                    news_analysis += "⚠️ FEAR - Negative sentiment detected\n→ Bearish bias, prefer SHORT positions"
+                elif sentiment == MarketSentiment.GREED:
+                    news_analysis += "📈 GREED - Positive sentiment detected\n→ Bullish bias, prefer LONG positions"
+                elif sentiment == MarketSentiment.EXTREME_GREED:
+                    news_analysis += "🔥 EXTREME GREED - Potential overheating\n→ Watch for reversal signals"
+                else:
+                    news_analysis += "😐 NEUTRAL - No strong sentiment\n→ Follow technical signals"
+                
+                state.update_ai_reasoning(state.ai_reasoning_text, news_analysis)
             except Exception as e:
                 pass
         
@@ -692,8 +721,22 @@ class LocalBrain:
                     }
                 elif historical_wr < self.historical_wr_threshold and ml_confidence >= 0.60:
                     print(f"   ⚠️  Gatekeeper: Bad Pattern (WR: {historical_wr:.1f}%) BUT Strong ML (conf: {ml_confidence:.0%}) - OVERRIDE")
+                    # Обновляем Gatekeeper status
+                    if STATE_AVAILABLE:
+                        try:
+                            state = get_global_brain_state()
+                            state.update_gatekeeper(symbol, f"PASS: ML Override (WR: {historical_wr:.1f}%)")
+                        except:
+                            pass
                 else:
                     print(f"   ✅ Gatekeeper: PASSED (CHOP: {chop:.1f}, Historical WR: {historical_wr:.1f}%)")
+                    # Обновляем Gatekeeper status
+                    if STATE_AVAILABLE:
+                        try:
+                            state = get_global_brain_state()
+                            state.update_gatekeeper(symbol, "PASS")
+                        except:
+                            pass
             
             except Exception as e:
                 print(f"   ⚠️ Pattern analysis error: {e}")

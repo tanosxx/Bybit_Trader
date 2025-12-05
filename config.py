@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     google_api_key_3: Optional[str] = None
     
     # AI APIs - OpenRouter (резервный)
-    openrouter_api_key: str
+    openrouter_api_key: str = "dummy"  # Optional, not used currently
     
     # Telegram
     telegram_bot_token: Optional[str] = None

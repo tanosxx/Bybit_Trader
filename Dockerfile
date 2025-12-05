@@ -2,15 +2,28 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies first (cached layer)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
-COPY . .
+# Copy config (changes rarely)
+COPY config.py .
+
+# Copy core modules (changes often - separate layer)
+COPY core/ ./core/
+COPY database/ ./database/
+COPY web/ ./web/
+
+# Copy ML models and data directories (will use volumes)
+COPY ml_training/ ./ml_training/
+COPY ml_data/ ./ml_data/
 
 # Set PYTHONPATH
 ENV PYTHONPATH=/app
+
+# Disable Python bytecode caching (prevents stale .pyc files)
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Default command (will be overridden in docker-compose)
 CMD ["python", "-u", "core/loop.py"]

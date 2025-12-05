@@ -170,11 +170,19 @@ class NewsAggregator:
             # Запускаем синхронный feedparser в отдельном потоке
             feed = await loop.run_in_executor(None, feedparser.parse, url)
             
-            if feed.bozo:
-                # feedparser обнаружил проблему с фидом
-                print(f"⚠️ RSS Warning for {url}: {feed.bozo_exception}")
+            # Проверяем наличие записей
+            if hasattr(feed, 'entries') and feed.entries:
+                return feed.entries
             
-            return feed.entries if feed.entries else []
+            # Если нет записей, но есть bozo_exception - это критическая ошибка
+            if feed.bozo and not feed.entries:
+                # Логируем только если действительно нет данных
+                exception_str = str(feed.bozo_exception)
+                # Игнорируем некритичные XML ошибки (syntax error, not well-formed)
+                if 'syntax error' not in exception_str and 'not well-formed' not in exception_str:
+                    print(f"⚠️ RSS Warning for {url}: {exception_str}")
+            
+            return []
             
         except Exception as e:
             print(f"❌ RSS Error for {url}: {e}")

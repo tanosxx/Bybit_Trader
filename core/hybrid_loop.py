@@ -367,6 +367,55 @@ class HybridTradingLoop:
             print(f"   Emergency PnL: ${stats['emergency_pnl']:+.2f}")
         
         print("="*60)
+        
+        # Обновляем GlobalBrainState с торговой статистикой
+        try:
+            from core.state import get_global_brain_state
+            from database.db import async_session
+            from database.models import Trade
+            from sqlalchemy import select, func
+            from datetime import datetime, timedelta
+            
+            state = get_global_brain_state()
+            
+            # Получаем статистику из БД
+            async with async_session() as session:
+                # Общая статистика
+                result = await session.execute(
+                    select(
+                        func.count(Trade.id).label('total'),
+                        func.sum(func.case((Trade.pnl > 0, 1), else_=0)).label('wins'),
+                        func.sum(func.case((Trade.pnl < 0, 1), else_=0)).label('losses'),
+                        func.sum(Trade.pnl).label('total_pnl')
+                    ).where(Trade.status == 'CLOSED')
+                )
+                stats = result.first()
+                
+                # Статистика за 24ч
+                yesterday = datetime.utcnow() - timedelta(hours=24)
+                result_24h = await session.execute(
+                    select(func.sum(Trade.pnl)).where(
+                        Trade.status == 'CLOSED',
+                        Trade.close_time >= yesterday
+                    )
+                )
+                pnl_24h = result_24h.scalar() or 0.0
+                
+                # Текущий баланс (из config)
+                from config import settings
+                current_balance = settings.futures_virtual_balance
+                
+                # Обновляем state
+                state.update_trading_performance(
+                    total_trades=stats.total or 0,
+                    winning_trades=stats.wins or 0,
+                    losing_trades=stats.losses or 0,
+                    total_pnl=float(stats.total_pnl or 0.0),
+                    current_balance=current_balance,
+                    performance_24h=float(pnl_24h)
+                )
+        except Exception as e:
+            print(f"⚠️ Failed to update trading stats: {e}")
     
     async def cycle(self):
         """Один цикл торговли"""
@@ -375,6 +424,87 @@ class HybridTradingLoop:
         print("\n" + "="*80)
         print(f"🔄 Hybrid Cycle #{self.cycle_count} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print("="*80)
+        
+        # ========== STRATEGIC COMPLIANCE CHECK ==========
+        # Проверяем соответствие открытых позиций текущему режиму Strategic Brain
+        if self.futures_executor and self.ai_brain.strategic_brain:
+            try:
+                from core.strategic_compliance import get_compliance_enforcer
+                from database.db import async_session
+                from database.models import Trade
+                from sqlalchemy import select
+                
+                # Получаем текущий режим
+                current_regime = self.ai_brain.strategic_brain.current_regime
+                
+                # Получаем открытые позиции из БД
+                async with async_session() as session:
+                    result = await session.execute(
+                        select(Trade).where(
+                            Trade.status == 'OPEN',
+                            Trade.market_type == 'futures'
+                        )
+                    )
+                    open_trades = result.scalars().all()
+                    
+                    if open_trades:
+                        # Преобразуем в формат для enforcer
+                        active_positions = [
+                            {
+                                'symbol': t.symbol,
+                                'side': t.side.value,
+                                'entry_price': float(t.entry_price),
+                                'quantity': float(t.quantity),
+                                'trade_id': t.id
+                            }
+                            for t in open_trades
+                        ]
+                        
+                        # Проверяем compliance
+                        enforcer = get_compliance_enforcer()
+                        positions_to_close = enforcer.enforce_strategic_compliance(
+                            active_positions, 
+                            current_regime
+                        )
+                        
+                        # Закрываем несоответствующие позиции
+                        if positions_to_close:
+                            print(f"\n🚨 STRATEGIC COMPLIANCE: Closing {len(positions_to_close)} non-compliant positions")
+                            
+                            for pos in positions_to_close:
+                                # Находим trade в БД
+                                trade_to_close = next(
+                                    (t for t in open_trades if t.symbol == pos['symbol'] and t.side.value == pos['side']),
+                                    None
+                                )
+                                
+                                if trade_to_close:
+                                    # Закрываем позицию
+                                    trade_to_close.status = 'CLOSED'
+                                    trade_to_close.exit_time = datetime.utcnow()
+                                    trade_to_close.exit_price = trade_to_close.entry_price  # Закрываем по текущей цене
+                                    trade_to_close.exit_reason = pos['reason']
+                                    trade_to_close.pnl = 0.0  # Без PnL (закрываем принудительно)
+                                    
+                                    print(f"   ✅ Closed {pos['symbol']} {pos['side']}: {pos['reason']}")
+                            
+                            await session.commit()
+                            
+                            # Уведомление в Telegram
+                            await self.telegram.notify_strategic_compliance(
+                                regime=current_regime,
+                                positions_closed=len(positions_to_close)
+                            )
+            except Exception as e:
+                print(f"⚠️ Strategic Compliance check error: {e}")
+        
+        # Обновляем GlobalBrainState - бот активен
+        try:
+            from core.state import get_global_brain_state
+            state = get_global_brain_state()
+            state.update_system_status(running=True, scan_time=datetime.utcnow())
+        except:
+            pass
         
         try:
             # 🛡️ SAFETY GUARDIAN - проверка и защита позиций
