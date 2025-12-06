@@ -32,7 +32,7 @@ class StrategicBrain:
     """
     
     def __init__(self):
-        """Инициализация Gemini API с ротацией ключей"""
+        """Инициализация Gemini API с ротацией ключей И моделей"""
         # Gemini API keys (ротация) - только рабочие ключи!
         self.gemini_keys = [
             os.getenv("GOOGLE_API_KEY_2"),  # Key #2 работает
@@ -41,8 +41,14 @@ class StrategicBrain:
         self.gemini_keys = [k for k in self.gemini_keys if k]  # Убираем None
         self.current_gemini_key_index = 0
         
-        # Модель Gemini (используем 2.0 Flash - стабильная версия)
-        self.model = "gemini-2.0-flash"  # Стабильная, без "thoughts"
+        # Модели Gemini (ротация для увеличения лимита)
+        # У каждой модели свой лимит! Используем обе на каждом ключе
+        # Названия моделей из скриншота: gemini-2.5-flash и gemini-2.5-flash-lite
+        self.gemini_models = [
+            "gemini-2.5-flash",      # Model #1: основная модель (5 RPM, 38/20 RPD)
+            "gemini-2.5-flash-lite",  # Model #2: lite версия (1/10 RPM, 1/20 RPD)
+        ]
+        self.current_model_index = 0
         
         # Кэш режима с гибким обновлением
         self.current_regime: str = REGIME_SIDEWAYS  # Default: торгуем как обычно
@@ -70,7 +76,16 @@ class StrategicBrain:
     
     def _call_gemini_api(self, prompt: str) -> Optional[str]:
         """
-        Fallback: вызов Gemini API напрямую через REST с ротацией ключей
+        Fallback: вызов Gemini API напрямую через REST с ротацией ключей И моделей
+        
+        ЛОГИКА РОТАЦИИ:
+        1. Используем Key #1 + Model #1 пока работает
+        2. При ошибке 429 → переключаемся на Key #1 + Model #2
+        3. При ошибке 429 → переключаемся на Key #2 + Model #1
+        4. При ошибке 429 → переключаемся на Key #2 + Model #2
+        5. Все комбинации исчерпаны → fallback SIDEWAYS
+        
+        Это даёт нам 4 независимых лимита вместо 2!
         
         Args:
             prompt: Промпт для анализа
@@ -82,15 +97,17 @@ class StrategicBrain:
             print("⚠️  No Gemini keys available")
             return None
         
-        # Пробуем все ключи по очереди
-        for attempt in range(len(self.gemini_keys)):
+        # Пробуем все комбинации ключей и моделей
+        total_attempts = len(self.gemini_keys) * len(self.gemini_models)
+        
+        for attempt in range(total_attempts):
             key_index = self.current_gemini_key_index
+            model_index = self.current_model_index
+            
             key = self.gemini_keys[key_index]
+            model = self.gemini_models[model_index]
             
-            # Переключаемся на следующий ключ для следующей попытки
-            self.current_gemini_key_index = (self.current_gemini_key_index + 1) % len(self.gemini_keys)
-            
-            url = f"https://generativelanguage.googleapis.com/v1/models/{self.model}:generateContent?key={key}"
+            url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={key}"
             headers = {"Content-Type": "application/json"}
             data = {
                 "contents": [{"parts": [{"text": prompt}]}],
@@ -102,7 +119,7 @@ class StrategicBrain:
             }
             
             try:
-                print(f"   🔑 Trying Gemini key #{key_index + 1}/{len(self.gemini_keys)}...")
+                print(f"   🔑 Using Key #{key_index + 1}/{len(self.gemini_keys)} + Model #{model_index + 1}/{len(self.gemini_models)} ({model})...")
                 response = requests.post(url, headers=headers, json=data, timeout=20)
                 
                 if response.status_code == 200:
@@ -137,46 +154,82 @@ class StrategicBrain:
                                 text = content['text']
                             
                             if text:
-                                print(f"   ✅ Gemini API success (key #{key_index + 1})")
+                                print(f"   ✅ Gemini API success (Key #{key_index + 1} + Model #{model_index + 1})")
+                                # НЕ переключаем при успехе - продолжаем использовать текущую комбинацию
                                 return text
                         
-                        print(f"   ⚠️  Gemini key #{key_index + 1}: No text in response")
+                        print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: No text in response")
                         print(f"      Finish reason: {finish_reason}")
+                        # Переключаемся на следующую комбинацию
+                        self._switch_to_next_combination()
                         continue
                     else:
-                        print(f"   ⚠️  Gemini key #{key_index + 1}: No candidates in response")
+                        print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: No candidates in response")
+                        # Переключаемся на следующую комбинацию
+                        self._switch_to_next_combination()
                         continue
                         
                 elif response.status_code == 429:
-                    print(f"   ⚠️  Gemini key #{key_index + 1}: Quota exceeded, trying next...")
+                    print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: Quota exceeded, switching...")
+                    # ВАЖНО: Сначала пробуем другую модель на том же ключе
+                    # Потом переключаемся на следующий ключ
+                    self.current_model_index = (self.current_model_index + 1) % len(self.gemini_models)
+                    
+                    # Если вернулись к первой модели - значит все модели на этом ключе исчерпаны
+                    # Переключаемся на следующий ключ
+                    if self.current_model_index == 0:
+                        self.current_gemini_key_index = (self.current_gemini_key_index + 1) % len(self.gemini_keys)
+                        print(f"   → Switching to Key #{self.current_gemini_key_index + 1}")
+                    else:
+                        print(f"   → Trying Model #{self.current_model_index + 1} on same key")
+                    
                     continue
                     
                 elif response.status_code == 400:
-                    print(f"   ⚠️  Gemini key #{key_index + 1}: Invalid request (400), trying next...")
+                    print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: Invalid request (400), trying next...")
+                    self._switch_to_next_combination()
                     continue
                     
                 elif response.status_code == 403:
-                    print(f"   ⚠️  Gemini key #{key_index + 1}: Invalid API key (403), trying next...")
+                    print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: Invalid API key (403), trying next...")
+                    self._switch_to_next_combination()
                     continue
                     
                 else:
-                    print(f"   ⚠️  Gemini key #{key_index + 1}: HTTP {response.status_code}")
+                    print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: HTTP {response.status_code}")
                     try:
                         error_data = response.json()
                         print(f"      Error: {error_data.get('error', {}).get('message', 'Unknown')}")
                     except:
                         pass
+                    self._switch_to_next_combination()
                     continue
                     
             except requests.exceptions.Timeout:
-                print(f"   ⚠️  Gemini key #{key_index + 1}: Timeout, trying next...")
+                print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: Timeout, trying next...")
+                self._switch_to_next_combination()
                 continue
             except Exception as e:
-                print(f"   ⚠️  Gemini key #{key_index + 1}: Exception: {e}")
+                print(f"   ⚠️  Key #{key_index + 1} + Model #{model_index + 1}: Exception: {e}")
+                self._switch_to_next_combination()
                 continue
         
-        print("   ❌ All Gemini keys failed")
+        print("   ❌ All Gemini key+model combinations failed")
         return None
+    
+    def _switch_to_next_combination(self):
+        """
+        Переключается на следующую комбинацию ключ+модель
+        
+        Логика:
+        1. Сначала пробуем все модели на текущем ключе
+        2. Потом переключаемся на следующий ключ
+        """
+        self.current_model_index = (self.current_model_index + 1) % len(self.gemini_models)
+        
+        # Если вернулись к первой модели - переключаемся на следующий ключ
+        if self.current_model_index == 0:
+            self.current_gemini_key_index = (self.current_gemini_key_index + 1) % len(self.gemini_keys)
     
     def _build_prompt(self, daily_candles: List[Dict], news_summary: str) -> str:
         """
