@@ -76,6 +76,7 @@ class TelegramCommander:
             self.app.add_handler(CommandHandler("status", self.cmd_status))
             self.app.add_handler(CommandHandler("brain", self.cmd_brain))
             self.app.add_handler(CommandHandler("panic", self.cmd_panic))
+            self.app.add_handler(CommandHandler("panic_test", self.cmd_panic_test))
             self.app.add_handler(CommandHandler("balance", self.cmd_balance))
             
             # Ignore non-admin messages
@@ -123,17 +124,18 @@ class TelegramCommander:
             return
         
         message = (
-            "🤖 **Bybit Trading Bot Commander**\n\n"
-            "**SILENT MODE** - бот молчит по умолчанию\n\n"
-            "**Доступные команды:**\n"
+            "🤖 <b>Bybit Trading Bot Commander</b>\n\n"
+            "<b>SILENT MODE</b> - бот молчит по умолчанию\n\n"
+            "<b>Доступные команды:</b>\n"
             "/status - Сводка одним взглядом\n"
             "/brain - Что думает система\n"
             "/balance - Детальный баланс\n"
+            "/panic_test - 🧪 Тест panic (без закрытия)\n"
             "/panic - 🚨 Emergency Stop\n\n"
             "Бот пишет только на команды или при ЧП"
         )
         
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message, parse_mode='HTML')
     
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Сводка одним взглядом"""
@@ -190,20 +192,20 @@ class TelegramCommander:
             pnl_emoji = "🟢" if pnl >= 0 else "🔴"
             
             message = (
-                f"📊 **STATUS REPORT**\n\n"
-                f"💰 **Balance:** ${current_balance:.2f}\n"
-                f"{pnl_emoji} **PnL:** ${pnl:+.2f} ({pnl_pct:+.1f}%)\n\n"
-                f"📈 **Positions:** {total_positions}\n"
+                f"📊 <b>STATUS REPORT</b>\n\n"
+                f"💰 <b>Balance:</b> ${current_balance:.2f}\n"
+                f"{pnl_emoji} <b>PnL:</b> ${pnl:+.2f} ({pnl_pct:+.1f}%)\n\n"
+                f"📈 <b>Positions:</b> {total_positions}\n"
                 f"   🟢 Long: {long_count}\n"
                 f"   🔴 Short: {short_count}\n\n"
-                f"🧠 **Regime:** {regime}\n"
-                f"⏰ **Time:** {datetime.utcnow().strftime('%H:%M:%S UTC')}"
+                f"🧠 <b>Regime:</b> {regime}\n"
+                f"⏰ <b>Time:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}"
             )
             
             if self.panic_mode:
-                message += "\n\n🚨 **PANIC MODE ACTIVE**"
+                message += "\n\n🚨 <b>PANIC MODE ACTIVE</b>"
             
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await update.message.reply_text(message, parse_mode='HTML')
             
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
@@ -230,23 +232,68 @@ class TelegramCommander:
             
             # Gatekeepers (примерные значения, можно расширить)
             message = (
-                f"🧠 **BRAIN STATUS**\n\n"
-                f"**Strategic Regime:** {regime}\n"
+                f"🧠 <b>BRAIN STATUS</b>\n\n"
+                f"<b>Strategic Regime:</b> {regime}\n"
                 f"   Updated: {update_str}\n\n"
-                f"**Gatekeepers:**\n"
+                f"<b>Gatekeepers:</b>\n"
                 f"   🚦 CHOP Filter: Active\n"
                 f"   📊 Pattern Filter: Active\n"
                 f"   👑 BTC Correlation: Active\n"
                 f"   💸 Funding Filter: Active\n\n"
-                f"**Safety:**\n"
+                f"<b>Safety:</b>\n"
                 f"   🛡️ Guardian: OK\n"
                 f"   ⚠️ Panic Mode: {'ON' if self.panic_mode else 'OFF'}"
             )
             
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await update.message.reply_text(message, parse_mode='HTML')
             
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
+    
+    async def cmd_panic_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """TEST: Показать что будет сделано при /panic (БЕЗ реального закрытия)"""
+        if not self._is_admin(update):
+            return
+        
+        try:
+            # Получаем позиции
+            if self.executor:
+                positions = await self.executor.get_open_positions()
+                
+                if not positions:
+                    message = (
+                        "🧪 <b>PANIC TEST</b>\n\n"
+                        "✅ No open positions\n"
+                        "Nothing to close\n\n"
+                        "⚠️ This is a TEST - no real actions taken"
+                    )
+                else:
+                    pos_list = []
+                    for pos in positions:
+                        side = pos['side']
+                        symbol = pos['symbol']
+                        qty = pos['quantity']
+                        entry = pos['entry_price']
+                        pos_list.append(f"   • {side} {symbol}: {qty} @ ${entry:.2f}")
+                    
+                    message = (
+                        f"🧪 <b>PANIC TEST</b>\n\n"
+                        f"<b>Would close {len(positions)} positions:</b>\n"
+                        + "\n".join(pos_list) +
+                        f"\n\n<b>Actions:</b>\n"
+                        f"1. Close all {len(positions)} positions\n"
+                        f"2. Activate panic_mode = True\n"
+                        f"3. Stop trading (new signals ignored)\n\n"
+                        f"⚠️ This is a TEST - no real actions taken\n"
+                        f"Use /panic to execute for real"
+                    )
+            else:
+                message = "❌ Executor not available"
+            
+            await update.message.reply_text(message, parse_mode='HTML')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Test error: {e}")
     
     async def cmd_panic(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Emergency Stop - закрыть всё и остановить"""
@@ -276,13 +323,13 @@ class TelegramCommander:
             self.panic_mode = True
             
             message = (
-                f"✅ **PANIC COMPLETE**\n\n"
+                f"✅ <b>PANIC COMPLETE</b>\n\n"
                 f"Closed positions: {closed_count}\n"
                 f"Bot paused: YES\n\n"
                 f"⚠️ Trading stopped. Restart bot to resume."
             )
             
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await update.message.reply_text(message, parse_mode='HTML')
             
         except Exception as e:
             await update.message.reply_text(f"❌ Panic error: {e}")
@@ -328,22 +375,22 @@ class TelegramCommander:
                 buying_power = current * leverage
                 
                 message = (
-                    f"💰 **BALANCE DETAILS**\n\n"
-                    f"**Virtual Balance:**\n"
+                    f"💰 <b>BALANCE DETAILS</b>\n\n"
+                    f"<b>Virtual Balance:</b>\n"
                     f"   Initial: ${initial:.2f}\n"
                     f"   Current: ${current:.2f}\n"
                     f"   Realized PnL: ${realized_pnl:+.2f}\n"
                     f"   ROI: {pnl_pct:+.1f}%\n\n"
-                    f"**Trading:**\n"
+                    f"<b>Trading:</b>\n"
                     f"   Total Trades: {total_trades}\n"
                     f"   Gross PnL: ${total_pnl:+.2f}\n"
                     f"   Total Fees: ${total_fees:.2f}\n\n"
-                    f"**Leverage:** {leverage}x\n"
-                    f"**Buying Power:** ${buying_power:.2f}\n\n"
+                    f"<b>Leverage:</b> {leverage}x\n"
+                    f"<b>Buying Power:</b> ${buying_power:.2f}\n\n"
                     f"⚠️ Demo Trading Mode"
                 )
             
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await update.message.reply_text(message, parse_mode='HTML')
             
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
@@ -363,11 +410,11 @@ class TelegramCommander:
             return
         
         try:
-            full_message = f"🚨 **{title}**\n\n{message}"
+            full_message = f"🚨 <b>{title}</b>\n\n{message}"
             await self.app.bot.send_message(
                 chat_id=self.admin_chat_id,
                 text=full_message,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
         except Exception as e:
             print(f"❌ Emergency notification error: {e}")
