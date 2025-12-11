@@ -613,9 +613,42 @@ class HybridTradingLoop:
 
 
 async def main():
-    """Entry point"""
+    """Entry point with Telegram Commander"""
     loop = HybridTradingLoop()
-    await loop.run()
+    
+    # Инициализируем Telegram Commander
+    try:
+        from core.telegram_commander import get_telegram_commander
+        
+        # Создаём commander с ссылками на компоненты
+        # strategic_brain доступен через ai_brain.strategic_brain
+        strategic_brain = loop.ai_brain.strategic_brain if loop.ai_brain else None
+        
+        commander = get_telegram_commander(
+            executor=loop.futures_executor,
+            ai_brain=loop.ai_brain,
+            strategic_brain=strategic_brain
+        )
+        
+        # Запускаем commander в фоне
+        commander_task = asyncio.create_task(commander.start())
+        print("✅ Telegram Commander started in background")
+        
+    except Exception as e:
+        print(f"⚠️ Telegram Commander disabled: {e}")
+        commander = None
+        commander_task = None
+    
+    # Запускаем основной цикл торговли
+    try:
+        await loop.run()
+    finally:
+        # Останавливаем commander при выходе
+        if commander:
+            try:
+                await commander.stop()
+            except Exception as e:
+                print(f"⚠️ Commander stop error: {e}")
 
 
 if __name__ == "__main__":
