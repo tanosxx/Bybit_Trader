@@ -95,6 +95,14 @@ class Settings(BaseSettings):
     min_profit_threshold_pct: float = 0.6  # Минимальный TP 0.6% (комиссия + проскальзывание + микро-профит)
     simulate_fees_in_demo: bool = True  # Учитывать комиссии в Demo режиме
     
+    # ========== LIMIT ORDER SETTINGS (Maker Strategy) ==========
+    # Переход на Limit ордера для экономии комиссий (0.02% Maker vs 0.055% Taker)
+    order_type: Literal['LIMIT', 'MARKET'] = 'LIMIT'  # Тип ордера по умолчанию
+    order_timeout_seconds: int = 60  # Таймаут для Limit ордеров (отмена если не исполнился)
+    limit_order_fallback_to_market: bool = True  # Fallback на Market если Limit не сработал
+    maker_fee_rate: float = 0.0002  # 0.02% Maker fee (Bybit standard)
+    taker_fee_rate: float = 0.00055  # 0.055% Taker fee (Bybit standard)
+    
     # ========== TRADING HOURS FILTER ==========
     trading_hours_enabled: bool = False  # ОТКЛЮЧЕНО - торгуем 24/7
     trading_hours_start: int = 0  # Начало торговли (UTC)

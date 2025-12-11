@@ -1,15 +1,24 @@
 """
-FUTURES Executor v4.0 - БЕЗОПАСНЫЙ исполнитель для фьючерсной торговли
+FUTURES Executor v7.0 - БЕЗОПАСНЫЙ исполнитель для фьючерсной торговли
 
-НОВЫЕ ФИЧИ v4.0:
+НОВЫЕ ФИЧИ v7.0 (Maker Strategy):
+1. LIMIT Orders - умное ценообразование по Best Bid/Ask (Maker fee 0.02%)
+2. Order Timeout - автоматическая отмена зависших ордеров (60s)
+3. Zombie Cleanup - очистка старых ордеров перед новым сигналом
+4. Fallback to Market - автоматический переход на Market при таймауте
+5. Dynamic Fee Calculation - правильный учёт Maker (0.02%) vs Taker (0.055%)
+
+ФИЧИ v4.0-v6.0:
 1. Native Trailing Stop - серверный трейлинг через Bybit API
 2. Funding Rate Filter - проверка ставки финансирования перед входом
+3. Position Limits - контроль количества позиций и ордеров
+4. BTC Correlation Filter - "Папа решает всё"
 
 КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ v3.0:
 1. setup_leverage_and_margin() - ISOLATED + Leverage ПЕРЕД каждой сделкой
 2. Price Precision - tickSize/qtyStep из get_instruments_info
 3. Atomic Order - SL/TP внутри place_order, не отдельно
-4. Virtual Balance $500 - никогда не запрашиваем реальный баланс
+4. Virtual Balance $100 - никогда не запрашиваем реальный баланс
 """
 import re
 import asyncio
@@ -78,7 +87,7 @@ class FuturesExecutor(BaseExecutor):
         # Текущие позиции
         self._current_positions: Dict[str, str] = {}
         
-        print(f"🚀 FuturesExecutor v6.2 initialized:")
+        print(f"🚀 FuturesExecutor v7.0 initialized (MAKER STRATEGY):")
         print(f"   💰 Virtual Balance: ${self.virtual_balance}")
         print(f"   📊 Base Leverage: {self.leverage}x (dynamic 2-7x)")
         print(f"   🎯 Risk per Trade: {self.risk_per_trade*100}%")
@@ -90,6 +99,9 @@ class FuturesExecutor(BaseExecutor):
         print(f"   🚫 Max Total Orders: {self.max_total_orders}")
         print(f"   🎯 Min Confidence: {self.min_confidence*100}%")
         print(f"   ⚠️ ISOLATED margin ENFORCED")
+        print(f"   💎 Order Type: {settings.order_type} (Maker: {settings.maker_fee_rate*100}%, Taker: {settings.taker_fee_rate*100}%)")
+        print(f"   ⏰ Limit Timeout: {settings.order_timeout_seconds}s")
+        print(f"   🔄 Fallback to Market: {'ON' if settings.limit_order_fallback_to_market else 'OFF'}")
     
     # ========== 0. POSITION LIMIT CHECK (v5.1) ==========
     
@@ -528,7 +540,74 @@ class FuturesExecutor(BaseExecutor):
         
         return quantity
     
-    # ========== 4. ATOMIC ORDER ==========
+    # ========== 4. CANCEL ALL ACTIVE ORDERS (Cleanup) ==========
+    
+    async def cancel_all_active_orders(self, symbol: str) -> bool:
+        """
+        Отменить все активные ордера для символа
+        
+        Очистка "зомби-ордеров" перед размещением нового
+        """
+        try:
+            endpoint = "/v5/order/cancel-all"
+            params = {
+                "category": "linear",
+                "symbol": symbol
+            }
+            
+            response = await self.api._request("POST", endpoint, params)
+            
+            if response and response.get("retCode") == 0:
+                result = response.get("result", {})
+                cancelled = result.get("list", [])
+                if cancelled:
+                    print(f"      🧹 Cancelled {len(cancelled)} zombie orders")
+                return True
+            
+            return True  # Не критично если нет ордеров
+            
+        except Exception as e:
+            print(f"      ⚠️ Cancel orders error: {e}")
+            return True
+    
+    # ========== 5. GET BEST BID/ASK (Orderbook) ==========
+    
+    async def get_best_prices(self, symbol: str) -> Optional[Dict[str, float]]:
+        """
+        Получить лучшие цены из стакана
+        
+        Returns: {'bid': float, 'ask': float} или None
+        """
+        try:
+            endpoint = "/v5/market/orderbook"
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "limit": 1  # Только топ уровень
+            }
+            
+            response = await self.api._request("GET", endpoint, params)
+            
+            if not response or response.get("retCode") != 0:
+                return None
+            
+            result = response.get("result", {})
+            bids = result.get("b", [])  # [[price, size], ...]
+            asks = result.get("a", [])
+            
+            if not bids or not asks:
+                return None
+            
+            best_bid = float(bids[0][0])
+            best_ask = float(asks[0][0])
+            
+            return {'bid': best_bid, 'ask': best_ask}
+            
+        except Exception as e:
+            print(f"      ⚠️ Orderbook error: {e}")
+            return None
+    
+    # ========== 6. ATOMIC ORDER (LIMIT or MARKET) ==========
     
     async def place_atomic_order(
         self,
@@ -539,58 +618,194 @@ class FuturesExecutor(BaseExecutor):
         take_profit: float  # Принимаем float
     ) -> Optional[Dict]:
         """
-        Открыть позицию БЕЗ SL/TP, затем установить их отдельно
+        Открыть позицию с умным ценообразованием
+        
+        Шаг А: Очистить зомби-ордера
+        Шаг Б: Определить цену (LIMIT: Best Bid/Ask, MARKET: не нужна)
+        Шаг В: Разместить ордер
+        Шаг Г: Мониторинг таймаута (для LIMIT)
         
         Bybit API v5 для linear futures требует устанавливать SL/TP
         через /v5/position/trading-stop, а не в основном ордере!
         """
-        # Шаг 1: Открыть позицию БЕЗ SL/TP
+        # Шаг А: Очистка зомби-ордеров
+        await self.cancel_all_active_orders(symbol)
+        
+        # Шаг Б: Определение цены и типа ордера
+        order_type = settings.order_type  # 'LIMIT' или 'MARKET'
+        price_str = None
+        
+        if order_type == 'LIMIT':
+            # Получаем лучшие цены из стакана
+            best_prices = await self.get_best_prices(symbol)
+            
+            if not best_prices:
+                # Fallback на Market если стакан недоступен
+                if settings.limit_order_fallback_to_market:
+                    print(f"      ⚠️ Orderbook unavailable - fallback to MARKET")
+                    order_type = 'MARKET'
+                else:
+                    print(f"      ❌ Orderbook unavailable - skipping trade")
+                    return None
+            else:
+                # Определяем цену для Maker ордера
+                info = await self.get_instrument_info(symbol)
+                tick_size = info['tick_size']
+                
+                if side == "Buy":  # LONG
+                    # Покупаем по Best Bid (становимся в очередь покупателей)
+                    limit_price = best_prices['bid']
+                else:  # SHORT
+                    # Продаём по Best Ask (становимся в очередь продавцов)
+                    limit_price = best_prices['ask']
+                
+                price_str = self.round_price(limit_price, tick_size)
+                print(f"      💰 LIMIT price: ${price_str} (Best {'Bid' if side == 'Buy' else 'Ask'})")
+        
+        # Шаг В: Размещение ордера
         endpoint = "/v5/order/create"
         params = {
             "category": "linear",
             "symbol": symbol,
             "side": side,
-            "orderType": "Market",
+            "orderType": order_type,
             "qty": qty,
             "positionIdx": 0  # One-Way Mode
         }
         
-        print(f"\n      📤 OPENING POSITION:")
-        print(f"         {side} {qty} {symbol}")
+        # Добавляем цену для LIMIT
+        if order_type == 'LIMIT' and price_str:
+            params["price"] = price_str
+            params["timeInForce"] = "GTC"  # Good Till Cancel
+        
+        print(f"\n      📤 OPENING POSITION ({order_type}):")
+        print(f"         {side} {qty} {symbol}" + (f" @ ${price_str}" if price_str else ""))
         
         response = await self.api._request("POST", endpoint, params)
         
         if not response or response.get("retCode") != 0:
             error = response.get("retMsg", "Unknown") if response else "No response"
             print(f"      ❌ Order FAILED: {error}")
-            return None
+            
+            # Fallback на Market если Limit не сработал
+            if order_type == 'LIMIT' and settings.limit_order_fallback_to_market:
+                print(f"      🔄 Retrying with MARKET order...")
+                params["orderType"] = "Market"
+                params.pop("price", None)
+                params.pop("timeInForce", None)
+                
+                response = await self.api._request("POST", endpoint, params)
+                if not response or response.get("retCode") != 0:
+                    print(f"      ❌ MARKET order also failed")
+                    return None
+            else:
+                return None
         
         result = response.get("result", {})
         order_id = result.get("orderId", "")
-        print(f"      ✅ Position opened: {order_id}")
         
-        # Шаг 2: НЕ устанавливаем SL/TP - Bybit API имеет баг с парсингом
+        # Шаг Г: Для LIMIT ордеров - ждём исполнения с таймаутом
+        if order_type == 'LIMIT':
+            print(f"      ⏳ Waiting for LIMIT order fill (timeout: {settings.order_timeout_seconds}s)...")
+            
+            filled = await self._wait_for_order_fill(symbol, order_id, settings.order_timeout_seconds)
+            
+            if not filled:
+                print(f"      ⏰ LIMIT order timeout - cancelling...")
+                await self._cancel_order(symbol, order_id)
+                
+                # Fallback на Market
+                if settings.limit_order_fallback_to_market:
+                    print(f"      🔄 Retrying with MARKET order...")
+                    params["orderType"] = "Market"
+                    params.pop("price", None)
+                    params.pop("timeInForce", None)
+                    
+                    response = await self.api._request("POST", endpoint, params)
+                    if not response or response.get("retCode") != 0:
+                        print(f"      ❌ MARKET order failed")
+                        return None
+                    
+                    order_id = response.get("result", {}).get("orderId", "")
+                    print(f"      ✅ Position opened (MARKET): {order_id}")
+                else:
+                    return None
+            else:
+                print(f"      ✅ LIMIT order filled: {order_id}")
+        else:
+            print(f"      ✅ Position opened (MARKET): {order_id}")
+        
+        # Шаг Д: НЕ устанавливаем SL/TP - Bybit API имеет баг с парсингом
         # Позиция открыта, будем управлять через мониторинг
         print(f"      ⚠️ SL/TP skipped (Bybit API bug): {stop_loss} | {take_profit}")
         print(f"      💡 Will be managed by position monitor")
         
-        # TODO: Реализовать мониторинг позиций и ручное закрытие по SL/TP
-        # через отдельный сервис
+        return {
+            "order_id": order_id,
+            "status": "OK",
+            "sl": stop_loss,
+            "tp": take_profit,
+            "order_type": order_type,
+            "limit_price": float(price_str) if price_str else None
+        }
+    
+    async def _wait_for_order_fill(self, symbol: str, order_id: str, timeout_seconds: int) -> bool:
+        """
+        Ждать исполнения ордера с таймаутом
         
-        return {"order_id": order_id, "status": "OK", "sl": stop_loss, "tp": take_profit}
+        Returns: True если исполнен, False если таймаут
+        """
+        start_time = asyncio.get_event_loop().time()
         
-        # СТАРЫЙ КОД (не работает из-за бага Bybit API):
-        # await asyncio.sleep(1)
-        # stop_endpoint = "/v5/position/trading-stop"
-        # stop_params = {
-        #     "category": "linear",
-        #     "symbol": symbol,
-        #     "stopLoss": str(stop_loss),
-        #     "takeProfit": str(take_profit),
-        #     "slTriggerBy": "LastPrice",
-        #     "tpTriggerBy": "LastPrice",
-        #     "positionIdx": 0
-        # }
+        while True:
+            elapsed = asyncio.get_event_loop().time() - start_time
+            if elapsed >= timeout_seconds:
+                return False
+            
+            # Проверяем статус ордера
+            try:
+                endpoint = "/v5/order/realtime"
+                params = {
+                    "category": "linear",
+                    "symbol": symbol,
+                    "orderId": order_id
+                }
+                
+                response = await self.api._request("GET", endpoint, params)
+                
+                if response and response.get("retCode") == 0:
+                    orders = response.get("result", {}).get("list", [])
+                    if orders:
+                        order = orders[0]
+                        order_status = order.get("orderStatus", "")
+                        
+                        if order_status == "Filled":
+                            return True
+                        elif order_status in ["Cancelled", "Rejected"]:
+                            return False
+                
+            except Exception as e:
+                print(f"      ⚠️ Order status check error: {e}")
+            
+            # Ждём 2 секунды перед следующей проверкой
+            await asyncio.sleep(2)
+    
+    async def _cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Отменить ордер"""
+        try:
+            endpoint = "/v5/order/cancel"
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "orderId": order_id
+            }
+            
+            response = await self.api._request("POST", endpoint, params)
+            return response and response.get("retCode") == 0
+            
+        except Exception as e:
+            print(f"      ⚠️ Cancel order error: {e}")
+            return False
 
 
     
@@ -781,7 +996,9 @@ class FuturesExecutor(BaseExecutor):
             signal=signal,
             position_side='LONG',
             stop_loss=float(sl_str),
-            take_profit=float(tp_str)
+            take_profit=float(tp_str),
+            order_type=order.get('order_type', 'MARKET'),
+            limit_price=order.get('limit_price')
         )
         
         self._current_positions[symbol] = 'LONG'
@@ -946,7 +1163,9 @@ class FuturesExecutor(BaseExecutor):
             signal=signal,
             position_side='SHORT',
             stop_loss=float(sl_str),
-            take_profit=float(tp_str)
+            take_profit=float(tp_str),
+            order_type=order.get('order_type', 'MARKET'),
+            limit_price=order.get('limit_price')
         )
         
         self._current_positions[symbol] = 'SHORT'
@@ -1055,16 +1274,23 @@ class FuturesExecutor(BaseExecutor):
             pnl = (trade.entry_price - price) * trade.quantity * self.leverage
         
         # ========== CALCULATE FEES ==========
-        TAKER_FEE_PCT = 0.055  # 0.055% Bybit taker fee
+        # Определяем тип комиссии из extra_data
+        order_type = trade.extra_data.get('order_type', 'MARKET') if trade.extra_data else 'MARKET'
+        
+        # Maker (LIMIT) = 0.02%, Taker (MARKET) = 0.055%
+        if order_type == 'LIMIT':
+            fee_pct = settings.maker_fee_rate * 100  # 0.02%
+        else:
+            fee_pct = settings.taker_fee_rate * 100  # 0.055%
         
         # Entry fee (если не записан)
         if not trade.fee_entry or trade.fee_entry == 0:
             entry_value = trade.entry_price * trade.quantity
-            trade.fee_entry = entry_value * (TAKER_FEE_PCT / 100)
+            trade.fee_entry = entry_value * (fee_pct / 100)
         
-        # Exit fee
+        # Exit fee (закрытие всегда Market = Taker)
         exit_value = price * trade.quantity
-        exit_fee = exit_value * (TAKER_FEE_PCT / 100)
+        exit_fee = exit_value * (settings.taker_fee_rate * 100 / 100)
         
         # Update DB
         async with async_session() as session:
@@ -1173,12 +1399,19 @@ class FuturesExecutor(BaseExecutor):
     
     async def _save_trade(self, symbol: str, side: TradeSide, price: float,
                           quantity: float, order_id: str, signal: TradeSignal,
-                          position_side: str, stop_loss: float, take_profit: float) -> Optional[Trade]:
+                          position_side: str, stop_loss: float, take_profit: float,
+                          order_type: str = 'MARKET', limit_price: float = None) -> Optional[Trade]:
         try:
-            # Рассчитываем комиссию входа
-            TAKER_FEE_PCT = 0.055  # 0.055% Bybit taker fee
-            entry_value = price * quantity
-            entry_fee = entry_value * (TAKER_FEE_PCT / 100)
+            # Рассчитываем комиссию входа (зависит от типа ордера)
+            if order_type == 'LIMIT':
+                fee_pct = settings.maker_fee_rate * 100  # 0.02% Maker
+            else:
+                fee_pct = settings.taker_fee_rate * 100  # 0.055% Taker
+            
+            # Используем limit_price если есть, иначе price
+            actual_entry_price = limit_price if limit_price else price
+            entry_value = actual_entry_price * quantity
+            entry_fee = entry_value * (fee_pct / 100)
             
             # Извлекаем ml_features из signal (если есть)
             ml_features = None
@@ -1189,7 +1422,7 @@ class FuturesExecutor(BaseExecutor):
                 trade = Trade(
                     symbol=symbol,
                     side=side,
-                    entry_price=price,
+                    entry_price=actual_entry_price,
                     quantity=quantity,
                     stop_loss=stop_loss,
                     take_profit=take_profit,
@@ -1202,18 +1435,20 @@ class FuturesExecutor(BaseExecutor):
                     extra_data={
                         'bybit_order_id': order_id,
                         'confidence': signal.confidence,
-                        'executor': 'FuturesExecutor_v5',
+                        'executor': 'FuturesExecutor_v7',
                         'leverage': self.leverage,
                         'position_side': position_side,
                         'margin_mode': 'ISOLATED',
-                        'virtual_balance': self.virtual_balance
+                        'virtual_balance': self.virtual_balance,
+                        'order_type': order_type,  # LIMIT или MARKET
+                        'limit_price': limit_price  # Цена лимитного ордера
                     }
                 )
                 session.add(trade)
                 await session.commit()
                 await session.refresh(trade)
                 
-                print(f"   💸 Entry fee: ${entry_fee:.4f} ({TAKER_FEE_PCT}%)")
+                print(f"   💸 Entry fee: ${entry_fee:.4f} ({fee_pct}% {order_type})")
                 
                 return trade
         except Exception as e:
