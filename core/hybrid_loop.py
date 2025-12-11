@@ -100,6 +100,14 @@ class HybridTradingLoop:
         print(f"   MACD: {technical['macd']['trend']}")
         print(f"   Trend: {technical['trend']}")
         
+        # Получаем BTC свечи для корреляционного фильтра (если торгуем не BTC)
+        btc_klines = []
+        if symbol != 'BTCUSDT':
+            try:
+                btc_klines = await self.api.get_klines('BTCUSDT', '15', limit=10)
+            except Exception as e:
+                print(f"   ⚠️ Failed to get BTC klines: {e}")
+        
         # AI Brain анализ
         market_data = {
             "symbol": symbol,
@@ -110,7 +118,8 @@ class HybridTradingLoop:
             "trend": technical['trend'],
             "volume_trend": technical['volume_trend'],
             "technical_signal": technical['signal'],
-            "klines": candles
+            "klines": candles,
+            "btc_klines": btc_klines  # Для BTC Correlation Filter
         }
         
         ai_analysis = await self.ai_brain.decide_trade(market_data)

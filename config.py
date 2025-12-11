@@ -104,6 +104,14 @@ class Settings(BaseSettings):
     require_trend_confirmation: bool = False  # ОТКЛЮЧЕНО - торгуем и против тренда
     min_trend_strength: float = 0.2  # Минимальная сила тренда для входа
     
+    # ========== BTC CORRELATION FILTER (KING BTC RULE) ==========
+    # Критически важный фильтр: "Папа решает всё"
+    # Блокирует LONG по альткоинам когда BTC падает
+    # Блокирует SHORT по альткоинам когда BTC растёт
+    btc_correlation_enabled: bool = True  # Включить BTC Correlation Filter
+    btc_correlation_threshold: float = 0.3  # Порог изменения BTC (0.3% = 30 базисных пунктов)
+    btc_correlation_candles: int = 2  # Количество свечей для анализа тренда BTC (2 × 15m = 30 минут)
+    
     # Trading Settings
     initial_balance: float = 50.0
     scan_interval: int = 60  # секунд

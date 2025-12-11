@@ -422,6 +422,116 @@ class LocalBrain:
         start = self.config.get('trading_hours_start', 0)
         end = self.config.get('trading_hours_end', 24)
         return start <= current_hour < end
+    
+    def _get_btc_trend_strength(self, btc_klines: list) -> float:
+        """
+        Получить силу тренда BTC за последние N свечей.
+        
+        KING BTC RULE: "Папа решает всё"
+        - Если BTC падает (-0.3%+) → блокируем LONG по альткоинам
+        - Если BTC растёт (+0.3%+) → блокируем SHORT по альткоинам
+        
+        Args:
+            btc_klines: Список свечей BTCUSDT (минимум 2 свечи)
+        
+        Returns:
+            float: Процентное изменение BTC (например, -1.2% или +0.5%)
+                   Положительное = рост, отрицательное = падение
+        """
+        from config import settings
+        
+        if not btc_klines or len(btc_klines) < 2:
+            return 0.0  # Нет данных - нейтрально
+        
+        # Берём последние N свечей (по умолчанию 2)
+        candles_count = settings.btc_correlation_candles
+        recent_candles = btc_klines[-candles_count:]
+        
+        # Цена открытия первой свечи
+        open_price = float(recent_candles[0]['open'])
+        
+        # Цена закрытия последней свечи
+        close_price = float(recent_candles[-1]['close'])
+        
+        # Процентное изменение
+        if open_price == 0:
+            return 0.0
+        
+        change_pct = ((close_price - open_price) / open_price) * 100
+        
+        return change_pct
+    
+    def _check_btc_correlation(
+        self, 
+        symbol: str, 
+        decision: str, 
+        btc_klines: list
+    ) -> Dict:
+        """
+        BTC Correlation Filter (Gatekeeper Level 2.5)
+        
+        KING BTC RULE: "Папа решает всё"
+        Проверяет корреляцию с BTC перед открытием сделки по альткоину.
+        
+        Args:
+            symbol: Торговая пара (например, 'ETHUSDT')
+            decision: Решение ML ('BUY' или 'SELL')
+            btc_klines: Свечи BTCUSDT
+        
+        Returns:
+            {
+                'allowed': bool,
+                'btc_trend': float,
+                'reason': str
+            }
+        """
+        from config import settings
+        
+        # Если фильтр отключен - разрешаем всё
+        if not settings.btc_correlation_enabled:
+            return {
+                'allowed': True,
+                'btc_trend': 0.0,
+                'reason': 'BTC correlation filter disabled'
+            }
+        
+        # Если торгуем сам BTC - пропускаем проверку
+        if symbol == 'BTCUSDT':
+            return {
+                'allowed': True,
+                'btc_trend': 0.0,
+                'reason': 'Trading BTC itself'
+            }
+        
+        # Получаем тренд BTC
+        btc_trend = self._get_btc_trend_strength(btc_klines)
+        threshold = settings.btc_correlation_threshold
+        
+        # Проверяем корреляцию
+        if decision == 'BUY':
+            # LONG по альткоину - проверяем что BTC не падает
+            if btc_trend < -threshold:
+                return {
+                    'allowed': False,
+                    'btc_trend': btc_trend,
+                    'reason': f'King BTC is dumping ({btc_trend:+.2f}%)'
+                }
+        
+        elif decision == 'SELL':
+            # SHORT по альткоину - проверяем что BTC не растёт
+            if btc_trend > threshold:
+                return {
+                    'allowed': False,
+                    'btc_trend': btc_trend,
+                    'reason': f'King BTC is pumping ({btc_trend:+.2f}%)'
+                }
+        
+        # Всё ОК - разрешаем сделку
+        return {
+            'allowed': True,
+            'btc_trend': btc_trend,
+            'reason': f'BTC trend OK ({btc_trend:+.2f}%)'
+        }
 
     async def decide_trade(self, market_data: Dict) -> Dict:
         """
@@ -740,6 +850,65 @@ Impact Assessment:
             
             except Exception as e:
                 print(f"   ⚠️ Pattern analysis error: {e}")
+        
+        # ========== GATEKEEPER LEVEL 2.5: BTC CORRELATION CHECK ==========
+        # KING BTC RULE: "Папа решает всё"
+        # Проверяем корреляцию с BTC перед открытием сделки по альткоину
+        if ml_decision in ['BUY', 'SELL']:
+            try:
+                # Получаем свечи BTC (используем уже загруженные данные если есть)
+                btc_klines = market_data.get('btc_klines', [])
+                
+                # Если нет BTC свечей в market_data, пробуем получить из API
+                if not btc_klines and self.api_client and symbol != 'BTCUSDT':
+                    try:
+                        btc_klines = await self.api_client.get_klines(
+                            symbol='BTCUSDT',
+                            interval='15',  # 15-минутные свечи
+                            limit=10  # Последние 10 свечей (достаточно для анализа)
+                        )
+                    except Exception as e:
+                        print(f"   ⚠️ Failed to get BTC klines: {e}")
+                        btc_klines = []
+                
+                # Проверяем корреляцию
+                btc_check = self._check_btc_correlation(symbol, ml_decision, btc_klines)
+                
+                if not btc_check['allowed']:
+                    print(f"   🚫 BTC Correlation: {btc_check['reason']}")
+                    
+                    # Обновляем Gatekeeper status
+                    if STATE_AVAILABLE:
+                        try:
+                            state = get_global_brain_state()
+                            state.update_gatekeeper(symbol, f"BLOCK: {btc_check['reason']}")
+                        except:
+                            pass
+                    
+                    self.stats['skips'] += 1
+                    return {
+                        'decision': 'SKIP',
+                        'confidence': 0.0,
+                        'risk_score': 7,
+                        'source': DecisionSource.SAFETY_MODE.value,
+                        'reasoning': btc_check['reason'],
+                        'position_size_multiplier': 0.0,
+                        'news_sentiment': sentiment.value,
+                        'ml_signal': ml_result,
+                        'ta_confirmation': None,
+                        'gatekeeper': {
+                            'chop': chop,
+                            'historical_wr': historical_wr,
+                            'btc_trend': btc_check['btc_trend'],
+                            'reason': 'BTC_CORRELATION_FILTER'
+                        }
+                    }
+                else:
+                    print(f"   ✅ BTC Correlation: {btc_check['reason']}")
+            
+            except Exception as e:
+                print(f"   ⚠️ BTC correlation check error: {e}")
+                # При ошибке - разрешаем сделку (graceful degradation)
         
         # ========== ШАГ 3: TA CONFIRMATION ==========
         ta_data = self._check_ta_confirmation(ml_decision, market_data)
