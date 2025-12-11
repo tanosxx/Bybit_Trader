@@ -1,6 +1,7 @@
 """
 Strategic Brain - Высокоуровневый анализ рыночного режима
 Использует Gemini 2.5 Flash для определения глобального тренда
+Fallback: Algion (GPTFree) при исчерпании лимитов Gemini
 Работает как Gatekeeper Level 0 (перед всеми остальными фильтрами)
 """
 
@@ -15,6 +16,14 @@ try:
     STATE_AVAILABLE = True
 except ImportError:
     STATE_AVAILABLE = False
+
+# Import Algion Client для fallback
+try:
+    from core.algion_client import get_algion_client
+    ALGION_AVAILABLE = True
+except ImportError:
+    ALGION_AVAILABLE = False
+    print("⚠️ Algion Client not available")
 
 # Market Regime Types
 REGIME_BULL_RUSH = "BULL_RUSH"      # Агрессивный рост -> только LONG
@@ -32,7 +41,7 @@ class StrategicBrain:
     """
     
     def __init__(self):
-        """Инициализация Gemini API с ротацией ключей И моделей"""
+        """Инициализация Gemini API с ротацией ключей И моделей + Algion fallback"""
         # Gemini API keys (ротация) - только рабочие ключи!
         self.gemini_keys = [
             os.getenv("GOOGLE_API_KEY_2"),  # Key #2 работает
@@ -49,6 +58,16 @@ class StrategicBrain:
             "gemini-2.5-flash-lite",  # Model #2: lite версия (1/10 RPM, 1/20 RPD)
         ]
         self.current_model_index = 0
+        
+        # Algion Client (fallback при исчерпании Gemini)
+        self.algion_client = None
+        if ALGION_AVAILABLE:
+            try:
+                self.algion_client = get_algion_client()
+                if self.algion_client:
+                    print("   ✅ Algion fallback enabled")
+            except Exception as e:
+                print(f"   ⚠️ Algion init failed: {e}")
         
         # Кэш режима с гибким обновлением
         self.current_regime: str = REGIME_SIDEWAYS  # Default: торгуем как обычно
@@ -68,11 +87,15 @@ class StrategicBrain:
         # Инициализация
         if self.gemini_keys:
             print(f"✅ Strategic Brain initialized")
-            print(f"   Model: Gemini 2.5 Flash")
-            print(f"   Keys: {len(self.gemini_keys)} available")
+            print(f"   Primary: Gemini 2.5 Flash ({len(self.gemini_keys)} keys)")
+            if self.algion_client:
+                print(f"   Fallback: Algion GPTFree (gpt-4.1)")
         else:
             print("⚠️ No Gemini keys found")
-            print("   → Strategic Brain disabled, using SIDEWAYS regime")
+            if self.algion_client:
+                print("   → Using Algion as primary")
+            else:
+                print("   → Strategic Brain disabled, using SIDEWAYS regime")
     
     def _call_gemini_api(self, prompt: str) -> Optional[str]:
         """
@@ -215,6 +238,12 @@ class StrategicBrain:
                 continue
         
         print("   ❌ All Gemini key+model combinations failed")
+        
+        # Fallback: пробуем Algion
+        if self.algion_client:
+            print("   🔄 Trying Algion fallback...")
+            return self._call_algion_api(prompt)
+        
         return None
     
     def _switch_to_next_combination(self):
@@ -230,6 +259,48 @@ class StrategicBrain:
         # Если вернулись к первой модели - переключаемся на следующий ключ
         if self.current_model_index == 0:
             self.current_gemini_key_index = (self.current_gemini_key_index + 1) % len(self.gemini_keys)
+    
+    def _call_algion_api(self, prompt: str) -> Optional[str]:
+        """
+        Fallback: вызов Algion API при исчерпании Gemini
+        
+        Args:
+            prompt: Промпт для анализа
+        
+        Returns:
+            Ответ от Algion или None при ошибке
+        """
+        if not self.algion_client:
+            return None
+        
+        try:
+            # Адаптируем промпт для Algion (он короче чем Gemini)
+            system_prompt = """You are a crypto market analyst. Analyze the market data and respond with ONLY ONE WORD:
+- BULL_RUSH (strong uptrend, only LONG trades)
+- BEAR_CRASH (strong downtrend, only SHORT trades)  
+- SIDEWAYS (ranging market, both directions OK)
+- UNCERTAIN (high volatility, no trading)
+
+Respond with ONE WORD only."""
+            
+            # Вызываем Algion
+            result = self.algion_client.generate_text(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                temperature=0.3,
+                max_tokens=50  # Нужен только 1 слово
+            )
+            
+            if result:
+                print(f"   ✅ Algion fallback success")
+                return result
+            else:
+                print(f"   ❌ Algion fallback failed")
+                return None
+                
+        except Exception as e:
+            print(f"   ❌ Algion exception: {e}")
+            return None
     
     def _build_prompt(self, daily_candles: List[Dict], news_summary: str) -> str:
         """
