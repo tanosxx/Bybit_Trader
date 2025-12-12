@@ -73,21 +73,26 @@ class BybitSync:
         """
         Синхронизировать фьючерсные позиции с биржей
         
-        УЛУЧШЕННАЯ ЛОГИКА v2.0:
+        PHANTOM KILLER v3.0 - Принудительный ликвидатор:
         1. Получаем позиции с биржи (только открытые size > 0)
-        2. Создаём уникальный ключ (symbol, side, quantity) для точного сопоставления
-        3. Закрываем в БД всё что не найдено на бирже
-        4. Рассчитываем PnL и комиссии при закрытии
-        5. Обучаем ML модель на результате
+        2. Получаем открытые позиции из БД
+        3. НАХОДИМ ФАНТОМОВ:
+           - Позиции на бирже, которых НЕТ в БД (или они закрыты)
+           - Позиции в БД, которых НЕТ на бирже
+        4. ЛИКВИДИРУЕМ ФАНТОМОВ:
+           - Закрываем на бирже через Market ордер (reduce_only=True)
+           - Обновляем БД
+           - Рассчитываем PnL и комиссии
+           - Обучаем ML модель
         """
         try:
-            # Получаем ВСЕ позиции с биржи
+            # ========== ШАГ 1: ПОЛУЧАЕМ ПОЗИЦИИ С БИРЖИ ==========
             all_positions = await self.api.get_positions()
             
-            # Создаём словарь открытых позиций с уникальным ключом
-            # Ключ: (symbol, side, quantity) - для точного сопоставления
-            exchange_positions = {}
-            exchange_positions_list = []  # Для вывода
+            # Создаём словарь открытых позиций на бирже
+            # Ключ: symbol (без учёта side/qty для обнаружения фантомов)
+            exchange_positions_by_symbol = {}
+            exchange_positions_list = []
             
             for pos in all_positions:
                 symbol = pos.get('symbol', '')
@@ -98,9 +103,7 @@ class BybitSync:
                     side = 'BUY' if pos.get('side') == 'Buy' else 'SELL'
                     entry_price = float(pos.get('avgPrice', 0) or pos.get('entry_price', 0))
                     
-                    # Уникальный ключ для сопоставления
-                    key = (symbol, side, size)
-                    exchange_positions[key] = {
+                    exchange_positions_by_symbol[symbol] = {
                         'symbol': symbol,
                         'side': side,
                         'size': size,
@@ -111,13 +114,13 @@ class BybitSync:
                     exchange_positions_list.append(f"{symbol} {side} {size}")
             
             print(f"\n📊 Фьючерсные позиции на бирже:")
-            print(f"   Открытых: {len(exchange_positions)}")
+            print(f"   Открытых: {len(exchange_positions_by_symbol)}")
             if exchange_positions_list:
                 for pos_str in exchange_positions_list:
                     print(f"      - {pos_str}")
             
+            # ========== ШАГ 2: ПОЛУЧАЕМ ПОЗИЦИИ ИЗ БД ==========
             async with async_session() as session:
-                # Получаем открытые позиции из БД
                 result = await session.execute(
                     select(Trade).where(
                         Trade.status == 'OPEN',
@@ -132,19 +135,86 @@ class BybitSync:
                     for t in db_trades:
                         print(f"      - {t.symbol} {t.side.value} {t.quantity}")
                 
-                synced = 0
-                closed = 0
-                
-                # 1. ЗАКРЫВАЕМ ФАНТОМНЫЕ ПОЗИЦИИ
-                # Проверяем каждую позицию из БД - есть ли она на бирже
+                # Создаём словарь позиций из БД по символу
+                db_positions_by_symbol = {}
                 for trade in db_trades:
-                    # Создаём ключ для поиска
-                    key = (trade.symbol, trade.side.value, trade.quantity)
-                    
-                    # Проверяем точное совпадение
-                    if key not in exchange_positions:
-                        # ФАНТОМНАЯ ПОЗИЦИЯ - закрыта на бирже, но открыта в БД
-                        print(f"   👻 ФАНТОМ: {trade.symbol} {trade.side.value} qty={trade.quantity} (ID: {trade.id})")
+                    db_positions_by_symbol[trade.symbol] = trade
+                
+                # ========== ШАГ 3: PHANTOM KILLER - ЛИКВИДАЦИЯ ФАНТОМОВ ==========
+                phantoms_killed = 0
+                db_phantoms_closed = 0
+                
+                # 3A. ФАНТОМЫ НА БИРЖЕ (есть на бирже, но НЕТ в БД)
+                print(f"\n👻 PHANTOM KILLER: Поиск фантомов на бирже...")
+                
+                for symbol, pos in exchange_positions_by_symbol.items():
+                    # Проверяем: есть ли эта позиция в БД?
+                    if symbol not in db_positions_by_symbol:
+                        # ФАНТОМ! Позиция на бирже, но нет в БД
+                        print(f"\n   🔥 ФАНТОМ ОБНАРУЖЕН: {symbol} {pos['side']} qty={pos['size']}")
+                        print(f"      Причина: Позиция на бирже, но НЕТ в БД")
+                        
+                        # ЛИКВИДАЦИЯ: Закрываем на бирже
+                        try:
+                            # Определяем сторону закрытия
+                            close_side = 'Sell' if pos['side'] == 'BUY' else 'Buy'
+                            
+                            print(f"      💀 Отправка ордера на ликвидацию...")
+                            print(f"         Symbol: {symbol}")
+                            print(f"         Side: {close_side} (закрываем {pos['side']})")
+                            print(f"         Qty: {pos['size']}")
+                            print(f"         Type: Market (reduce_only=True)")
+                            
+                            # Отправляем Market ордер на закрытие
+                            order_result = await self.api.place_futures_order(
+                                symbol=symbol,
+                                side=close_side,
+                                order_type='Market',
+                                qty=pos['size'],
+                                reduce_only=True  # КРИТИЧНО! Только закрытие, не открытие встречной
+                            )
+                            
+                            print(f"      ✅ ФАНТОМ ЛИКВИДИРОВАН на бирже!")
+                            print(f"         Order ID: {order_result.get('order_id', 'N/A')}")
+                            print(f"         Status: {order_result.get('status', 'Unknown')}")
+                            
+                            phantoms_killed += 1
+                            
+                            # Создаём запись в БД о ликвидации фантома
+                            from database.models import TradeSide
+                            phantom_trade = Trade(
+                                symbol=symbol,
+                                side=TradeSide.BUY if pos['side'] == 'BUY' else TradeSide.SELL,
+                                entry_price=pos['entry_price'],
+                                quantity=pos['size'],
+                                entry_time=datetime.utcnow(),
+                                exit_time=datetime.utcnow(),
+                                exit_price=pos['entry_price'],  # Примерная цена
+                                pnl=pos['unrealised_pnl'],
+                                fee_entry=0.0,
+                                fee_exit=0.0,
+                                status='CLOSED',
+                                market_type='futures',
+                                exit_reason='Phantom Killer: Liquidated phantom position on exchange',
+                                leverage=int(pos['leverage'])
+                            )
+                            session.add(phantom_trade)
+                            
+                        except Exception as e:
+                            print(f"      ❌ ОШИБКА ЛИКВИДАЦИИ: {e}")
+                            print(f"         Фантом остался на бирже!")
+                            import traceback
+                            traceback.print_exc()
+                
+                # 3B. ФАНТОМЫ В БД (есть в БД, но НЕТ на бирже)
+                print(f"\n👻 PHANTOM KILLER: Поиск фантомов в БД...")
+                
+                for trade in db_trades:
+                    # Проверяем: есть ли эта позиция на бирже?
+                    if trade.symbol not in exchange_positions_by_symbol:
+                        # ФАНТОМ! Позиция в БД, но нет на бирже
+                        print(f"\n   👻 ФАНТОМ В БД: {trade.symbol} {trade.side.value} qty={trade.quantity} (ID: {trade.id})")
+                        print(f"      Причина: Позиция в БД, но НЕТ на бирже (уже закрыта)")
                         
                         # Получаем текущую цену для расчёта PnL
                         try:
@@ -159,7 +229,7 @@ class BybitSync:
                         else:  # SELL
                             pnl = (trade.entry_price - current_price) * trade.quantity
                         
-                        # Рассчитываем комиссии (если не были рассчитаны)
+                        # Рассчитываем комиссии
                         if trade.fee_entry == 0:
                             entry_value = trade.entry_price * trade.quantity
                             trade.fee_entry = entry_value * settings.estimated_fee_rate
@@ -168,16 +238,16 @@ class BybitSync:
                             exit_value = current_price * trade.quantity
                             trade.fee_exit = exit_value * settings.estimated_fee_rate
                         
-                        # Закрываем позицию
+                        # Закрываем в БД
                         trade.status = 'CLOSED'
                         trade.exit_time = datetime.utcnow()
                         trade.exit_price = current_price
                         trade.pnl = pnl
-                        trade.exit_reason = 'Sync: phantom position (closed on exchange)'
+                        trade.exit_reason = 'Phantom Killer: Position already closed on exchange'
                         
-                        closed += 1
+                        db_phantoms_closed += 1
                         
-                        print(f"      ✅ Закрыта: exit=${current_price:.2f}, PnL=${pnl:.2f}, fees=${trade.fee_entry + trade.fee_exit:.4f}")
+                        print(f"      ✅ Закрыт в БД: exit=${current_price:.2f}, PnL=${pnl:.2f}, fees=${trade.fee_entry + trade.fee_exit:.4f}")
                         
                         # ========== SELF-LEARNING: Обучение на результате ==========
                         if trade.ml_features:
@@ -186,52 +256,38 @@ class BybitSync:
                                 learner = get_self_learner()
                                 
                                 # Определяем результат: 1 = Win, 0 = Loss
-                                result = 1 if pnl > 0 else 0
+                                ml_result = 1 if pnl > 0 else 0
                                 
                                 # Обучаем модель
-                                success = learner.learn(trade.ml_features, result)
+                                success = learner.learn(trade.ml_features, ml_result)
                                 
                                 if success:
                                     stats = learner.get_stats()
-                                    print(f"      🧠 ML: Learned from {'WIN' if result == 1 else 'LOSS'} (samples: {stats['learned_samples']})")
+                                    print(f"      🧠 ML: Learned from {'WIN' if ml_result == 1 else 'LOSS'} (samples: {stats['learned_samples']})")
                             
                             except Exception as e:
                                 print(f"      ⚠️ ML error (ignored): {e}")
                 
-                # 2. ОБНОВЛЯЕМ СУЩЕСТВУЮЩИЕ ПОЗИЦИИ
-                # Если quantity изменился на бирже - обновляем в БД
-                for key, pos in exchange_positions.items():
-                    symbol, side, size = key
-                    
-                    # Ищем соответствующую позицию в БД
-                    for trade in db_trades:
-                        if (trade.symbol == symbol and 
-                            trade.side.value == side and 
-                            trade.status.value == 'OPEN'):
-                            
-                            # Обновляем quantity если изменился
-                            if abs(trade.quantity - size) > 0.0001:
-                                old_qty = trade.quantity
-                                trade.quantity = size
-                                print(f"   🔄 Обновлена: {symbol} qty={old_qty:.4f} → {size:.4f}")
-                                synced += 1
-                            break
-                
                 await session.commit()
                 
-                # Итоговая статистика
-                remaining_open = len(db_trades) - closed
-                print(f"\n✅ Синхронизация завершена:")
-                print(f"   👻 Закрыто фантомных: {closed}")
-                print(f"   🔄 Обновлено: {synced}")
-                print(f"   📊 Осталось открытых: {remaining_open}")
-                print(f"   🌐 На бирже открытых: {len(exchange_positions)}")
+                # ========== ИТОГОВАЯ СТАТИСТИКА ==========
+                remaining_db = len(db_trades) - db_phantoms_closed
+                remaining_exchange = len(exchange_positions_by_symbol) - phantoms_killed
                 
-                if remaining_open != len(exchange_positions):
-                    print(f"   ⚠️  РАСХОЖДЕНИЕ: БД={remaining_open}, Bybit={len(exchange_positions)}")
+                print(f"\n" + "="*80)
+                print(f"✅ PHANTOM KILLER: Синхронизация завершена")
+                print(f"="*80)
+                print(f"   💀 Ликвидировано на бирже: {phantoms_killed}")
+                print(f"   👻 Закрыто в БД: {db_phantoms_closed}")
+                print(f"   📊 Осталось в БД: {remaining_db}")
+                print(f"   🌐 Осталось на бирже: {remaining_exchange}")
+                
+                if remaining_db != remaining_exchange:
+                    print(f"   ⚠️  РАСХОЖДЕНИЕ: БД={remaining_db}, Bybit={remaining_exchange}")
                     print(f"   💡 Возможно позиции открылись после запроса к API")
                 else:
                     print(f"   ✅ ПОЛНОЕ СОВПАДЕНИЕ!")
+                print(f"="*80)
                 
         except Exception as e:
             print(f"❌ Ошибка синхронизации фьючерсов: {e}")
@@ -278,19 +334,23 @@ async def main():
     """Основной цикл синхронизации"""
     sync = BybitSync()
     
-    print("🚀 Запуск полной синхронизации с Bybit API v2.0...")
-    print(f"📊 Интервал: каждые 15 секунд (ускорено для быстрой синхронизации)")
+    print("🚀 Запуск PHANTOM KILLER v3.0 - Принудительный ликвидатор...")
+    print(f"📊 Интервал: каждые 15 секунд")
     print(f"💡 Синхронизируем:")
     print(f"   - Балансы всех монет (USDT, USDC, BTC, ETH)")
     print(f"   - Фьючерсные позиции (с расчётом PnL)")
-    print(f"   - Автоматическое закрытие фантомных позиций")
     print(f"   - Открытые ордера (спотовые)")
     print(f"   - Актуальные данные для Dashboard")
-    print(f"\n🔥 НОВОЕ v2.0:")
-    print(f"   - Точное сопоставление по (symbol, side, quantity)")
-    print(f"   - Расчёт PnL и комиссий при закрытии фантомов")
-    print(f"   - Обучение ML модели на результатах")
-    print(f"   - Интервал 15s вместо 30s")
+    print(f"\n🔥 PHANTOM KILLER v3.0:")
+    print(f"   💀 ЛИКВИДАЦИЯ ФАНТОМОВ НА БИРЖЕ:")
+    print(f"      - Обнаружение позиций на бирже без записи в БД")
+    print(f"      - Автоматическое закрытие через Market ордер (reduce_only=True)")
+    print(f"      - Создание записи о ликвидации в БД")
+    print(f"   👻 ЗАКРЫТИЕ ФАНТОМОВ В БД:")
+    print(f"      - Обнаружение позиций в БД, которых нет на бирже")
+    print(f"      - Расчёт PnL и комиссий")
+    print(f"      - Обучение ML модели на результатах")
+    print(f"   ✅ ПОЛНАЯ СИНХРОНИЗАЦИЯ: БД ↔ Биржа")
     
     while True:
         try:

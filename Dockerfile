@@ -18,6 +18,10 @@ COPY web/ ./web/
 COPY ml_training/ ./ml_training/
 COPY ml_data/ ./ml_data/
 
+# Copy utility scripts
+COPY check_self_learning.py .
+COPY full_system_check.py .
+
 # Set PYTHONPATH
 ENV PYTHONPATH=/app
 

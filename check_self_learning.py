@@ -106,7 +106,8 @@ def check_self_learning():
             print(f"      Learned samples: {stats['learned_samples']}")
             print(f"      Predictions: {stats['predictions']}")
             print(f"      Win rate: {stats['win_rate']:.1f}%")
-            print(f"      Accuracy: {stats['accuracy']:.2%}")
+            print(f"      Model Accuracy: {stats['model_accuracy']:.2%}")
+            print(f"      Ready: {stats['ready']}")
             
             # Проверяем минимальный порог
             if stats['learned_samples'] >= 50:
