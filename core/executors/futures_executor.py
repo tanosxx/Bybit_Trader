@@ -56,9 +56,12 @@ class FuturesExecutor(BaseExecutor):
         self.api = get_bybit_api()
         
         # ========== VIRTUAL BALANCE из config.py ==========
-        self.virtual_balance = settings.futures_virtual_balance  # Из конфига!
-        self.initial_balance = settings.futures_virtual_balance
+        self.initial_balance = settings.futures_virtual_balance  # Стартовый баланс
+        self.virtual_balance = settings.futures_virtual_balance  # Будет обновлён из БД
         self.realized_pnl = 0.0
+        
+        # Загружаем текущий баланс из БД (асинхронно при первом использовании)
+        self._balance_loaded = False
         
         # Настройки торговли
         self.leverage = settings.futures_leverage  # Базовое, будет меняться динамически
@@ -972,6 +975,9 @@ class FuturesExecutor(BaseExecutor):
         qty_step = info['qty_step']
         min_qty = info['min_qty']
         
+        # 3.5. Load balance from DB (first time only)
+        await self.load_balance_from_db()
+        
         # 4. Calculate position size
         quantity = self.calculate_position_size(price, self.leverage)
         qty_str = self.round_qty(quantity, qty_step, min_qty)
@@ -1146,6 +1152,9 @@ class FuturesExecutor(BaseExecutor):
         tick_size = info['tick_size']
         qty_step = info['qty_step']
         min_qty = info['min_qty']
+        
+        # 3.5. Load balance from DB (first time only)
+        await self.load_balance_from_db()
         
         # 4. Calculate qty
         quantity = self.calculate_position_size(price, self.leverage)
@@ -1426,10 +1435,54 @@ class FuturesExecutor(BaseExecutor):
             'leverage': self.leverage
         }
     
+    async def load_balance_from_db(self):
+        """
+        Загрузить текущий баланс из БД
+        
+        Рассчитывает: initial_balance + SUM(pnl) - SUM(fees)
+        """
+        if self._balance_loaded:
+            return  # Уже загружен
+        
+        try:
+            from sqlalchemy import select, func
+            
+            async with async_session() as session:
+                # Считаем PnL из закрытых сделок
+                result = await session.execute(
+                    select(
+                        func.sum(Trade.pnl).label('total_pnl'),
+                        func.sum(Trade.fee_entry + Trade.fee_exit).label('total_fees')
+                    ).where(
+                        Trade.status == TradeStatus.CLOSED,
+                        Trade.market_type == 'futures'
+                    )
+                )
+                row = result.first()
+                total_pnl = float(row.total_pnl or 0)
+                total_fees = float(row.total_fees or 0)
+                
+                # Текущий баланс = стартовый + PnL - комиссии
+                self.virtual_balance = self.initial_balance + total_pnl - total_fees
+                self.realized_pnl = total_pnl - total_fees
+                
+                self._balance_loaded = True
+                
+                print(f"💰 Balance loaded from DB:")
+                print(f"   Initial: ${self.initial_balance:.2f}")
+                print(f"   Gross PnL: ${total_pnl:+.2f}")
+                print(f"   Fees: -${total_fees:.2f}")
+                print(f"   Current: ${self.virtual_balance:.2f} ({self.realized_pnl:+.2f})")
+                
+        except Exception as e:
+            print(f"⚠️ Failed to load balance from DB: {e}")
+            print(f"   Using config balance: ${self.virtual_balance:.2f}")
+    
     def update_balance(self, pnl: float):
+        """Обновить баланс после закрытия позиции"""
         self.virtual_balance += pnl
         self.realized_pnl += pnl
-        print(f"💰 Balance: ${self.virtual_balance:.2f} (PnL: ${pnl:+.2f})")
+        print(f"💰 Balance updated: ${self.virtual_balance:.2f} (PnL: ${pnl:+.2f})")
     
     async def _save_trade(self, symbol: str, side: TradeSide, price: float,
                           quantity: float, order_id: str, signal: TradeSignal,
