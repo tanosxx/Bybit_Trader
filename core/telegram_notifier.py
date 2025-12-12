@@ -85,37 +85,10 @@ class TelegramReporter:
         """
         🚀 OPEN LONG / 🐻 OPEN SHORT
         
-        Компактное уведомление об открытии позиции
+        ОТКЛЮЧЕНО - используйте /orders для просмотра
         """
-        if not self._check_futures_only(market_type):
-            return
-        
-        # Заголовок
-        if side.upper() in ["LONG", "BUY"]:
-            header = "🚀 <b>OPEN LONG</b>"
-        else:
-            header = "🐻 <b>OPEN SHORT</b>"
-        
-        # Рассчитываем % до SL/TP
-        if side.upper() in ["LONG", "BUY"]:
-            sl_pct = ((stop_loss - entry_price) / entry_price) * 100
-            tp_pct = ((take_profit - entry_price) / entry_price) * 100
-        else:
-            sl_pct = ((entry_price - stop_loss) / entry_price) * 100
-            tp_pct = ((entry_price - take_profit) / entry_price) * 100
-        
-        # Сокращаем reason
-        short_reason = reason[:80] if reason else "Signal confirmed"
-        
-        message = f"""{header}
-
-<b>#{symbol}</b>
-💵 <b>Size:</b> ${size_usd:.2f} (Lev: {leverage}x Isolated)
-🏁 <b>Entry:</b> ${entry_price:,.2f}
-🛡️ <b>SL:</b> ${stop_loss:,.2f} ({sl_pct:+.1f}%) | 🎯 <b>TP:</b> ${take_profit:,.2f} ({tp_pct:+.1f}%)
-🧠 <b>Why:</b> {short_reason}"""
-        
-        await self.send_message(message)
+        # SILENT MODE - не отправляем автоматические уведомления
+        return
     
     # ========== ТИП Б: ЗАКРЫТИЕ ПОЗИЦИИ ==========
     
@@ -136,48 +109,10 @@ class TelegramReporter:
         """
         💰 TAKE PROFIT / 🩸 STOP LOSS
         
-        Компактное уведомление о закрытии с учётом комиссий
+        ОТКЛЮЧЕНО - используйте /orders для просмотра
         """
-        if not self._check_futures_only(market_type):
-            return
-        
-        # Заголовок по результату (используем net_pnl если есть, иначе pnl)
-        final_pnl = net_pnl if net_pnl is not None else pnl
-        
-        if final_pnl >= 0:
-            header = "💰 <b>TAKE PROFIT</b>"
-            pnl_emoji = "📈"
-        else:
-            header = "🩸 <b>STOP LOSS</b>"
-            pnl_emoji = "📉"
-        
-        # Форматируем время
-        if duration_minutes > 60:
-            duration_str = f"{duration_minutes // 60}h {duration_minutes % 60}m"
-        else:
-            duration_str = f"{duration_minutes}m"
-        
-        message = f"""{header}
-
-<b>#{symbol}</b> ({side})
-{pnl_emoji} <b>Exit:</b> ${exit_price:,.2f}"""
-        
-        # Показываем Gross и Net PnL если доступны
-        if gross_pnl is not None and net_pnl is not None and fees is not None:
-            message += f"""
-💵 <b>Gross PnL:</b> ${gross_pnl:+.2f} ({pnl_pct:+.1f}%)
-💸 <b>Fees:</b> -${fees:.2f}
-💰 <b>Net PnL:</b> ${net_pnl:+.2f} (in pocket)"""
-        else:
-            # Fallback: старый формат
-            message += f"\n💸 <b>PnL:</b> ${pnl:+.2f} ({pnl_pct:+.1f}%)"
-        
-        message += f"\n⏱️ <b>Duration:</b> {duration_str}"
-        
-        if reason:
-            message += f"\n📝 {reason}"
-        
-        await self.send_message(message)
+        # SILENT MODE - не отправляем автоматические уведомления
+        return
     
     # ========== ТИП В: TRAILING STOP ==========
     

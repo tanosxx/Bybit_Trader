@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     
     # ========== POSITION LIMITS - SMART GROWTH $100 ==========
     futures_max_open_positions: int = 5  # Макс. 5 позиций (5 × $12 = $60 маржи, $40 буфер)
+    futures_max_positions_per_symbol: int = 1  # Макс. 1 позиция на символ (диверсификация!)
     futures_max_orders_per_symbol: int = 15  # Макс. ордеров на один символ
     futures_max_total_orders: int = 80  # Макс. всего ордеров
     futures_min_confidence: float = 0.60  # Мин. confidence 60% для LONG

@@ -75,6 +75,7 @@ class TelegramCommander:
             self.app.add_handler(CommandHandler("start", self.cmd_start))
             self.app.add_handler(CommandHandler("status", self.cmd_status))
             self.app.add_handler(CommandHandler("brain", self.cmd_brain))
+            self.app.add_handler(CommandHandler("orders", self.cmd_orders))
             self.app.add_handler(CommandHandler("panic", self.cmd_panic))
             self.app.add_handler(CommandHandler("panic_test", self.cmd_panic_test))
             self.app.add_handler(CommandHandler("balance", self.cmd_balance))
@@ -129,6 +130,7 @@ class TelegramCommander:
             "<b>Доступные команды:</b>\n"
             "/status - Сводка одним взглядом\n"
             "/brain - Что думает система\n"
+            "/orders - Последние ордера\n"
             "/balance - Детальный баланс\n"
             "/panic_test - 🧪 Тест panic (без закрытия)\n"
             "/panic - 🚨 Emergency Stop\n\n"
@@ -333,6 +335,93 @@ class TelegramCommander:
             
         except Exception as e:
             await update.message.reply_text(f"❌ Panic error: {e}")
+    
+    async def cmd_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Последние ордера (открытые + недавно закрытые)"""
+        if not self._is_admin(update):
+            return
+        
+        try:
+            from database.db import async_session
+            from database.models import Trade, TradeStatus
+            from sqlalchemy import select, desc
+            
+            async with async_session() as session:
+                # Открытые позиции
+                open_result = await session.execute(
+                    select(Trade).where(
+                        Trade.status == TradeStatus.OPEN,
+                        Trade.market_type == 'futures'
+                    ).order_by(desc(Trade.entry_time))
+                )
+                open_trades = list(open_result.scalars().all())
+                
+                # Последние 10 закрытых
+                closed_result = await session.execute(
+                    select(Trade).where(
+                        Trade.status == TradeStatus.CLOSED,
+                        Trade.market_type == 'futures'
+                    ).order_by(desc(Trade.exit_time)).limit(10)
+                )
+                closed_trades = list(closed_result.scalars().all())
+                
+                message = "📊 <b>ORDERS</b>\n\n"
+                
+                # Открытые позиции
+                if open_trades:
+                    message += f"<b>🟢 OPEN ({len(open_trades)}):</b>\n"
+                    for trade in open_trades:
+                        side_emoji = "🚀" if trade.side.value == "BUY" else "🐻"
+                        entry_time = trade.entry_time.strftime("%H:%M")
+                        
+                        # Рассчитываем текущий unrealized PnL (примерно)
+                        # Для точности нужна текущая цена, но для простоты показываем entry
+                        message += (
+                            f"{side_emoji} <b>{trade.symbol}</b> {trade.side.value}\n"
+                            f"   Entry: ${trade.entry_price:.2f} | Qty: {trade.quantity}\n"
+                            f"   Time: {entry_time} UTC\n\n"
+                        )
+                else:
+                    message += "<b>🟢 OPEN:</b> None\n\n"
+                
+                # Закрытые позиции
+                if closed_trades:
+                    message += f"<b>📜 RECENT CLOSED (last 10):</b>\n"
+                    for trade in closed_trades[:10]:
+                        # Определяем результат
+                        net_pnl = trade.pnl - (trade.fee_entry + trade.fee_exit)
+                        result_emoji = "💰" if net_pnl >= 0 else "🩸"
+                        side_emoji = "🚀" if trade.side.value == "BUY" else "🐻"
+                        
+                        # Время
+                        exit_time = trade.exit_time.strftime("%H:%M") if trade.exit_time else "?"
+                        
+                        # Длительность
+                        if trade.entry_time and trade.exit_time:
+                            duration = (trade.exit_time - trade.entry_time).total_seconds() / 60
+                            if duration > 60:
+                                duration_str = f"{int(duration // 60)}h{int(duration % 60)}m"
+                            else:
+                                duration_str = f"{int(duration)}m"
+                        else:
+                            duration_str = "?"
+                        
+                        message += (
+                            f"{result_emoji} <b>{trade.symbol}</b> {trade.side.value}\n"
+                            f"   PnL: ${net_pnl:+.2f} | Exit: ${trade.exit_price:.2f}\n"
+                            f"   Time: {exit_time} | Duration: {duration_str}\n\n"
+                        )
+                else:
+                    message += "<b>📜 RECENT CLOSED:</b> None\n"
+                
+                # Обрезаем если слишком длинное
+                if len(message) > 4000:
+                    message = message[:4000] + "\n\n... (truncated)"
+            
+            await update.message.reply_text(message, parse_mode='HTML')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
     
     async def cmd_balance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Детальный баланс"""

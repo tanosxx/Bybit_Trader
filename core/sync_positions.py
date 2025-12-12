@@ -70,14 +70,24 @@ class BybitSync:
             traceback.print_exc()
     
     async def sync_futures_positions(self):
-        """Синхронизировать фьючерсные позиции с биржей"""
+        """
+        Синхронизировать фьючерсные позиции с биржей
+        
+        УЛУЧШЕННАЯ ЛОГИКА v2.0:
+        1. Получаем позиции с биржи (только открытые size > 0)
+        2. Создаём уникальный ключ (symbol, side, quantity) для точного сопоставления
+        3. Закрываем в БД всё что не найдено на бирже
+        4. Рассчитываем PnL и комиссии при закрытии
+        5. Обучаем ML модель на результате
+        """
         try:
-            # Получаем ВСЕ позиции с биржи (включая закрытые)
+            # Получаем ВСЕ позиции с биржи
             all_positions = await self.api.get_positions()
             
-            # Разделяем на открытые и закрытые
-            exchange_positions = {}  # Только открытые (size > 0)
-            closed_symbols = set()   # Символы с size = 0 (закрытые)
+            # Создаём словарь открытых позиций с уникальным ключом
+            # Ключ: (symbol, side, quantity) - для точного сопоставления
+            exchange_positions = {}
+            exchange_positions_list = []  # Для вывода
             
             for pos in all_positions:
                 symbol = pos.get('symbol', '')
@@ -86,19 +96,25 @@ class BybitSync:
                 if size > 0:
                     # Открытая позиция
                     side = 'BUY' if pos.get('side') == 'Buy' else 'SELL'
-                    exchange_positions[symbol] = {
+                    entry_price = float(pos.get('avgPrice', 0) or pos.get('entry_price', 0))
+                    
+                    # Уникальный ключ для сопоставления
+                    key = (symbol, side, size)
+                    exchange_positions[key] = {
+                        'symbol': symbol,
                         'side': side,
                         'size': size,
-                        'entry_price': float(pos.get('entry_price', 0)),
-                        'leverage': pos.get('leverage', '1')
+                        'entry_price': entry_price,
+                        'leverage': pos.get('leverage', '1'),
+                        'unrealised_pnl': float(pos.get('unrealisedPnl', 0))
                     }
-                else:
-                    # Закрытая позиция (size = 0)
-                    closed_symbols.add(symbol)
+                    exchange_positions_list.append(f"{symbol} {side} {size}")
             
             print(f"\n📊 Фьючерсные позиции на бирже:")
             print(f"   Открытых: {len(exchange_positions)}")
-            print(f"   Закрытых (size=0): {len(closed_symbols)}")
+            if exchange_positions_list:
+                for pos_str in exchange_positions_list:
+                    print(f"      - {pos_str}")
             
             async with async_session() as session:
                 # Получаем открытые позиции из БД
@@ -109,47 +125,68 @@ class BybitSync:
                     )
                 )
                 db_trades = list(result.scalars().all())
-                db_symbols = {t.symbol: t for t in db_trades}
+                
+                print(f"\n📊 Позиции в БД:")
+                print(f"   Открытых: {len(db_trades)}")
+                if db_trades:
+                    for t in db_trades:
+                        print(f"      - {t.symbol} {t.side.value} {t.quantity}")
                 
                 synced = 0
                 closed = 0
-                added = 0
                 
-                # 1. Закрываем позиции в БД которых нет на бирже
+                # 1. ЗАКРЫВАЕМ ФАНТОМНЫЕ ПОЗИЦИИ
+                # Проверяем каждую позицию из БД - есть ли она на бирже
                 for trade in db_trades:
-                    should_close = False
-                    close_reason = ""
+                    # Создаём ключ для поиска
+                    key = (trade.symbol, trade.side.value, trade.quantity)
                     
-                    # Если символа нет в активных позициях биржи
-                    if trade.symbol not in exchange_positions:
-                        # Позиция закрыта на бирже
-                        should_close = True
-                        close_reason = 'Sync: closed on exchange'
-                        print(f"   🔒 Закрываем в БД: {trade.symbol} {trade.side.value} (закрыта на бирже)")
-                    else:
-                        # Проверяем совпадение стороны
-                        ex_pos = exchange_positions[trade.symbol]
-                        if trade.side.value != ex_pos['side']:
-                            # Сторона изменилась - закрываем старую
-                            should_close = True
-                            close_reason = f'Sync: reversed to {ex_pos["side"]}'
-                            print(f"   🔄 Реверс: {trade.symbol} {trade.side.value} -> {ex_pos['side']}")
-                    
-                    if should_close:
+                    # Проверяем точное совпадение
+                    if key not in exchange_positions:
+                        # ФАНТОМНАЯ ПОЗИЦИЯ - закрыта на бирже, но открыта в БД
+                        print(f"   👻 ФАНТОМ: {trade.symbol} {trade.side.value} qty={trade.quantity} (ID: {trade.id})")
+                        
+                        # Получаем текущую цену для расчёта PnL
+                        try:
+                            ticker = await self.api.get_ticker(trade.symbol)
+                            current_price = float(ticker.get('lastPrice', trade.entry_price))
+                        except:
+                            current_price = trade.entry_price
+                        
+                        # Рассчитываем PnL
+                        if trade.side.value == 'BUY':
+                            pnl = (current_price - trade.entry_price) * trade.quantity
+                        else:  # SELL
+                            pnl = (trade.entry_price - current_price) * trade.quantity
+                        
+                        # Рассчитываем комиссии (если не были рассчитаны)
+                        if trade.fee_entry == 0:
+                            entry_value = trade.entry_price * trade.quantity
+                            trade.fee_entry = entry_value * settings.estimated_fee_rate
+                        
+                        if trade.fee_exit == 0:
+                            exit_value = current_price * trade.quantity
+                            trade.fee_exit = exit_value * settings.estimated_fee_rate
+                        
+                        # Закрываем позицию
                         trade.status = 'CLOSED'
                         trade.exit_time = datetime.utcnow()
-                        trade.exit_price = trade.entry_price
-                        trade.exit_reason = close_reason
+                        trade.exit_price = current_price
+                        trade.pnl = pnl
+                        trade.exit_reason = 'Sync: phantom position (closed on exchange)'
+                        
                         closed += 1
                         
+                        print(f"      ✅ Закрыта: exit=${current_price:.2f}, PnL=${pnl:.2f}, fees=${trade.fee_entry + trade.fee_exit:.4f}")
+                        
                         # ========== SELF-LEARNING: Обучение на результате ==========
-                        if trade.ml_features and trade.pnl is not None:
+                        if trade.ml_features:
                             try:
                                 from core.self_learning import get_self_learner
                                 learner = get_self_learner()
                                 
                                 # Определяем результат: 1 = Win, 0 = Loss
-                                result = 1 if trade.pnl > 0 else 0
+                                result = 1 if pnl > 0 else 0
                                 
                                 # Обучаем модель
                                 success = learner.learn(trade.ml_features, result)
@@ -161,37 +198,40 @@ class BybitSync:
                             except Exception as e:
                                 print(f"      ⚠️ ML error (ignored): {e}")
                 
-                # 2. НЕ добавляем новые позиции - это делает бот!
-                # Только обновляем quantity существующих
-                for symbol, pos in exchange_positions.items():
-                    existing = None
-                    for t in db_trades:
-                        if t.symbol == symbol and t.side.value == pos['side'] and t.status.value == 'OPEN':
-                            existing = t
-                            break
+                # 2. ОБНОВЛЯЕМ СУЩЕСТВУЮЩИЕ ПОЗИЦИИ
+                # Если quantity изменился на бирже - обновляем в БД
+                for key, pos in exchange_positions.items():
+                    symbol, side, size = key
                     
-                    if existing:
-                        # Обновляем quantity если изменился
-                        if abs(existing.quantity - pos['size']) > 0.0001:
-                            existing.quantity = pos['size']
-                            print(f"   🔄 Обновлена: {symbol} qty={pos['size']}")
-                            synced += 1
-                    # НЕ добавляем новые - бот сам добавит при открытии!
+                    # Ищем соответствующую позицию в БД
+                    for trade in db_trades:
+                        if (trade.symbol == symbol and 
+                            trade.side.value == side and 
+                            trade.status.value == 'OPEN'):
+                            
+                            # Обновляем quantity если изменился
+                            if abs(trade.quantity - size) > 0.0001:
+                                old_qty = trade.quantity
+                                trade.quantity = size
+                                print(f"   🔄 Обновлена: {symbol} qty={old_qty:.4f} → {size:.4f}")
+                                synced += 1
+                            break
                 
                 await session.commit()
                 
                 # Итоговая статистика
                 remaining_open = len(db_trades) - closed
                 print(f"\n✅ Синхронизация завершена:")
-                print(f"   Закрыто в БД: {closed}")
-                print(f"   Обновлено: {synced}")
-                print(f"   Осталось открытых: {remaining_open}")
-                print(f"   На бирже открытых: {len(exchange_positions)}")
+                print(f"   👻 Закрыто фантомных: {closed}")
+                print(f"   🔄 Обновлено: {synced}")
+                print(f"   📊 Осталось открытых: {remaining_open}")
+                print(f"   🌐 На бирже открытых: {len(exchange_positions)}")
                 
                 if remaining_open != len(exchange_positions):
-                    print(f"   ⚠️  Расхождение: БД={remaining_open}, Bybit={len(exchange_positions)}")
+                    print(f"   ⚠️  РАСХОЖДЕНИЕ: БД={remaining_open}, Bybit={len(exchange_positions)}")
+                    print(f"   💡 Возможно позиции открылись после запроса к API")
                 else:
-                    print(f"   ✅ Полное совпадение!")
+                    print(f"   ✅ ПОЛНОЕ СОВПАДЕНИЕ!")
                 
         except Exception as e:
             print(f"❌ Ошибка синхронизации фьючерсов: {e}")
@@ -238,23 +278,30 @@ async def main():
     """Основной цикл синхронизации"""
     sync = BybitSync()
     
-    print("🚀 Запуск полной синхронизации с Bybit API...")
-    print(f"📊 Интервал: каждые 30 секунд")
+    print("🚀 Запуск полной синхронизации с Bybit API v2.0...")
+    print(f"📊 Интервал: каждые 15 секунд (ускорено для быстрой синхронизации)")
     print(f"💡 Синхронизируем:")
     print(f"   - Балансы всех монет (USDT, USDC, BTC, ETH)")
+    print(f"   - Фьючерсные позиции (с расчётом PnL)")
+    print(f"   - Автоматическое закрытие фантомных позиций")
     print(f"   - Открытые ордера (спотовые)")
     print(f"   - Актуальные данные для Dashboard")
+    print(f"\n🔥 НОВОЕ v2.0:")
+    print(f"   - Точное сопоставление по (symbol, side, quantity)")
+    print(f"   - Расчёт PnL и комиссий при закрытии фантомов")
+    print(f"   - Обучение ML модели на результатах")
+    print(f"   - Интервал 15s вместо 30s")
     
     while True:
         try:
             await sync.sync_all()
-            await asyncio.sleep(30)  # Каждые 30 секунд
+            await asyncio.sleep(15)  # Каждые 15 секунд (ускорено!)
         except KeyboardInterrupt:
             print("\n⏹️ Остановка синхронизации...")
             break
         except Exception as e:
             print(f"❌ Ошибка в цикле синхронизации: {e}")
-            await asyncio.sleep(30)
+            await asyncio.sleep(15)
 
 
 if __name__ == "__main__":

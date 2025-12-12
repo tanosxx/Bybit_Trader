@@ -145,6 +145,24 @@ class FuturesExecutor(BaseExecutor):
             print(f"   ⚠️ Error counting orders for {symbol}: {e}")
             return 0
     
+    async def _count_positions_for_symbol(self, symbol: str) -> int:
+        """Подсчитать количество открытых ПОЗИЦИЙ для конкретного символа (не ордеров!)"""
+        try:
+            async with async_session() as session:
+                from sqlalchemy import func
+                result = await session.execute(
+                    select(func.count(Trade.id)).where(
+                        Trade.status == TradeStatus.OPEN,
+                        Trade.market_type == 'futures',
+                        Trade.symbol == symbol
+                    )
+                )
+                count = result.scalar() or 0
+                return count
+        except Exception as e:
+            print(f"   ⚠️ Error counting positions for {symbol}: {e}")
+            return 0
+    
     async def _count_total_orders(self) -> int:
         """Подсчитать общее количество открытых ордеров"""
         try:
@@ -893,7 +911,7 @@ class FuturesExecutor(BaseExecutor):
         """
         print(f"\n🟢 [FUTURES] Opening LONG {symbol} @ ${price:.2f}")
         
-        # 0. CHECK POSITION LIMITS (v6.2)
+        # 0. CHECK POSITION LIMITS (v7.1)
         # Проверка 1: Уникальные символы
         open_symbols = await self._count_open_positions()
         if open_symbols >= self.max_open_positions:
@@ -901,14 +919,22 @@ class FuturesExecutor(BaseExecutor):
             print(f"   {error_msg}")
             return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
         
-        # Проверка 2: Ордеров на этот символ
+        # Проверка 2: Позиций на этот символ (НОВОЕ v7.1!)
+        symbol_positions = await self._count_positions_for_symbol(symbol)
+        max_per_symbol = getattr(settings, 'futures_max_positions_per_symbol', 1)
+        if symbol_positions >= max_per_symbol:
+            error_msg = f"❌ {symbol} position limit: {symbol_positions}/{max_per_symbol} positions"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
+        
+        # Проверка 3: Ордеров на этот символ
         symbol_orders = await self._count_orders_for_symbol(symbol)
         if symbol_orders >= self.max_orders_per_symbol:
             error_msg = f"❌ {symbol} limit: {symbol_orders}/{self.max_orders_per_symbol} orders"
             print(f"   {error_msg}")
             return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
         
-        # Проверка 3: Общее количество ордеров
+        # Проверка 4: Общее количество ордеров
         total_orders = await self._count_total_orders()
         if total_orders >= self.max_total_orders:
             error_msg = f"❌ Total orders limit: {total_orders}/{self.max_total_orders}"
@@ -1061,7 +1087,7 @@ class FuturesExecutor(BaseExecutor):
         """
         print(f"\n🔴 [FUTURES] Opening SHORT {symbol} @ ${price:.2f}")
         
-        # 0. CHECK POSITION LIMITS (v6.2)
+        # 0. CHECK POSITION LIMITS (v7.1)
         # Проверка 1: Уникальные символы
         open_symbols = await self._count_open_positions()
         if open_symbols >= self.max_open_positions:
@@ -1069,14 +1095,22 @@ class FuturesExecutor(BaseExecutor):
             print(f"   {error_msg}")
             return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
         
-        # Проверка 2: Ордеров на этот символ
+        # Проверка 2: Позиций на этот символ (НОВОЕ v7.1!)
+        symbol_positions = await self._count_positions_for_symbol(symbol)
+        max_per_symbol = getattr(settings, 'futures_max_positions_per_symbol', 1)
+        if symbol_positions >= max_per_symbol:
+            error_msg = f"❌ {symbol} position limit: {symbol_positions}/{max_per_symbol} positions"
+            print(f"   {error_msg}")
+            return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
+        
+        # Проверка 3: Ордеров на этот символ
         symbol_orders = await self._count_orders_for_symbol(symbol)
         if symbol_orders >= self.max_orders_per_symbol:
             error_msg = f"❌ {symbol} limit: {symbol_orders}/{self.max_orders_per_symbol} orders"
             print(f"   {error_msg}")
             return ExecutionResult(success=False, market_type=self.market_type, error=error_msg)
         
-        # Проверка 3: Общее количество ордеров
+        # Проверка 4: Общее количество ордеров
         total_orders = await self._count_total_orders()
         if total_orders >= self.max_total_orders:
             error_msg = f"❌ Total orders limit: {total_orders}/{self.max_total_orders}"

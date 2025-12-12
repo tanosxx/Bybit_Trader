@@ -1,22 +1,114 @@
-# TELEGRAM COMMANDER v1.0 - Интерактивный командир бота
-**Дата:** 12 декабря 2025, 01:40 UTC  
-**Статус:** ✅ Готово к деплою
+# 🤖 TELEGRAM COMMANDER - SILENT MODE
+
+## 📊 Проблема
+
+Telegram бот отправлял уведомление о **каждой сделке** (открытие/закрытие), что создавало спам в чате.
+
+### Было
+- ✅ Команды работали (/status, /brain, /balance)
+- ❌ Автоматические уведомления о каждой сделке
+- ❌ Нет команды для просмотра ордеров
+
+### Последствия
+- 📱 Спам в Telegram (десятки сообщений в день)
+- 😤 Раздражающие уведомления
+- 🔕 Невозможно отключить без потери функциональности
 
 ---
 
-## 🎯 ФИЛОСОФИЯ "SILENT MODE"
+## ✅ РЕШЕНИЕ: SILENT MODE
 
-Бот **МОЛЧИТ** по умолчанию. Никаких уведомлений о каждой сделке, TP/SL, funding rate и т.д.
+### Философия
+**"Бот молчит по умолчанию, говорит только на команды"**
 
-**Бот пишет ТОЛЬКО в двух случаях:**
-1. **На команду** - ты спросил, он ответил
-2. **ЧП** - Safety Guardian сработал, ошибка API, риск ликвидации
+- ✅ Никаких автоматических уведомлений о сделках
+- ✅ Команды для просмотра информации по запросу
+- ✅ Уведомления только при ЧП (Safety Guardian, ошибки API)
 
 ---
 
-## 📱 КОМАНДЫ
+## 🔧 Изменения
 
-### `/start` - Приветствие
+### 1. Отключены автоматические уведомления
+
+**telegram_notifier.py:**
+
+**Было:**
+```python
+async def notify_open(...):
+    """Отправить уведомление об открытии позиции"""
+    message = f"🚀 OPEN LONG\n#{symbol}\n..."
+    await self.send_message(message)
+
+async def notify_close(...):
+    """Отправить уведомление о закрытии позиции"""
+    message = f"💰 TAKE PROFIT\n#{symbol}\n..."
+    await self.send_message(message)
+```
+
+**Стало:**
+```python
+async def notify_open(...):
+    """
+    🚀 OPEN LONG / 🐻 OPEN SHORT
+    
+    ОТКЛЮЧЕНО - используйте /orders для просмотра
+    """
+    # SILENT MODE - не отправляем автоматические уведомления
+    return
+
+async def notify_close(...):
+    """
+    💰 TAKE PROFIT / 🩸 STOP LOSS
+    
+    ОТКЛЮЧЕНО - используйте /orders для просмотра
+    """
+    # SILENT MODE - не отправляем автоматические уведомления
+    return
+```
+
+### 2. Добавлена команда /orders
+
+**telegram_commander.py:**
+
+```python
+async def cmd_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Последние ордера (открытые + недавно закрытые)"""
+    
+    # Открытые позиции
+    open_trades = await get_open_positions()
+    
+    # Последние 10 закрытых
+    closed_trades = await get_recent_closed(limit=10)
+    
+    # Форматируем сообщение
+    message = "📊 ORDERS\n\n"
+    
+    # Открытые
+    for trade in open_trades:
+        message += f"🚀 {trade.symbol} {trade.side}\n"
+        message += f"   Entry: ${trade.entry_price:.2f} | Qty: {trade.quantity}\n"
+        message += f"   Time: {trade.entry_time}\n\n"
+    
+    # Закрытые
+    for trade in closed_trades:
+        net_pnl = trade.pnl - (trade.fee_entry + trade.fee_exit)
+        result_emoji = "💰" if net_pnl >= 0 else "🩸"
+        
+        message += f"{result_emoji} {trade.symbol} {trade.side}\n"
+        message += f"   PnL: ${net_pnl:+.2f} | Exit: ${trade.exit_price:.2f}\n"
+        message += f"   Time: {trade.exit_time} | Duration: {duration}\n\n"
+    
+    await update.message.reply_text(message, parse_mode='HTML')
+```
+
+---
+
+## 📱 Команды Telegram бота
+
+### Основные команды
+
+**/start** - Приветствие и список команд
 ```
 🤖 Bybit Trading Bot Commander
 
@@ -25,33 +117,35 @@ SILENT MODE - бот молчит по умолчанию
 Доступные команды:
 /status - Сводка одним взглядом
 /brain - Что думает система
+/orders - Последние ордера
 /balance - Детальный баланс
+/panic_test - 🧪 Тест panic (без закрытия)
 /panic - 🚨 Emergency Stop
 
 Бот пишет только на команды или при ЧП
 ```
 
-### `/status` - Сводка одним взглядом
+**/status** - Сводка одним взглядом
 ```
 📊 STATUS REPORT
 
-💰 Balance: $379.10
-🟢 PnL: +$279.10 (+279.0%)
+💰 Balance: $377.66
+🟢 PnL: +$277.66 (+277.7%)
 
 📈 Positions: 3
    🟢 Long: 2
    🔴 Short: 1
 
 🧠 Regime: SIDEWAYS
-⏰ Time: 01:40:15 UTC
+⏰ Time: 10:50:00 UTC
 ```
 
-### `/brain` - Что думает система
+**/brain** - Что думает система
 ```
 🧠 BRAIN STATUS
 
 Strategic Regime: SIDEWAYS
-   Updated: 15m ago
+   Updated: 5m ago
 
 Gatekeepers:
    🚦 CHOP Filter: Active
@@ -64,23 +158,75 @@ Safety:
    ⚠️ Panic Mode: OFF
 ```
 
-### `/balance` - Детальный баланс
+**/orders** - Последние ордера (НОВОЕ!)
+```
+📊 ORDERS
+
+🟢 OPEN (3):
+🚀 BNBUSDT BUY
+   Entry: $886.50 | Qty: 0.19
+   Time: 05:34 UTC
+
+🐻 ETHUSDT SELL
+   Entry: $3247.61 | Qty: 0.06
+   Time: 03:42 UTC
+
+🚀 XRPUSDT BUY
+   Entry: $2.0378 | Qty: 127.4
+   Time: 06:49 UTC
+
+📜 RECENT CLOSED (last 10):
+💰 BTCUSDT BUY
+   PnL: +$1.87 | Exit: $42150.50
+   Time: 10:30 | Duration: 45m
+
+🩸 ETHUSDT SELL
+   PnL: -$1.94 | Exit: $3245.00
+   Time: 10:15 | Duration: 1h20m
+
+...
+```
+
+**/balance** - Детальный баланс
 ```
 💰 BALANCE DETAILS
 
 Virtual Balance:
    Initial: $100.00
-   Current: $379.10
-   Realized PnL: +$279.10
-   ROI: +279.0%
+   Current: $377.66
+   Realized PnL: +$277.66
+   ROI: +277.7%
+
+Trading:
+   Total Trades: 355
+   Gross PnL: +$293.19
+   Total Fees: $15.48
 
 Leverage: 5x
-Buying Power: $1,895.50
+Buying Power: $1888.30
 
 ⚠️ Demo Trading Mode
 ```
 
-### `/panic` - 🚨 Emergency Stop
+**/panic_test** - Тест panic (без реального закрытия)
+```
+🧪 PANIC TEST
+
+Would close 3 positions:
+   • LONG BNBUSDT: 0.19 @ $886.50
+   • SELL ETHUSDT: 0.06 @ $3247.61
+   • LONG XRPUSDT: 127.4 @ $2.0378
+
+Actions:
+1. Close all 3 positions
+2. Activate panic_mode = True
+3. Stop trading (new signals ignored)
+
+⚠️ This is a TEST - no real actions taken
+Use /panic to execute for real
+```
+
+**/panic** - Emergency Stop
 ```
 🚨 PANIC ACTIVATED
 
@@ -94,321 +240,237 @@ Bot paused: YES
 ⚠️ Trading stopped. Restart bot to resume.
 ```
 
-**Что делает:**
-1. Закрывает ВСЕ открытые позиции
-2. Активирует `panic_mode = True`
-3. Останавливает торговлю (новые сигналы игнорируются)
-
-**Как возобновить:**
-Перезапустить контейнер: `docker-compose restart bot`
-
 ---
 
-## 🚨 EMERGENCY NOTIFICATIONS
+## 🔔 Когда бот пишет сам?
 
-Бот автоматически пишет при ЧП:
+### Только при ЧП (Emergency)
 
-### Safety Guardian сработал
+**1. Safety Guardian сработал**
 ```
-🚨 SAFETY GUARDIAN ALERT
+🚨 SAFETY CLOSE
 
-Position size exceeded: $850 > $800 limit
+#BTCUSDT (LONG)
+💸 PnL: -$5.00
+⚠️ Reason: Max drawdown exceeded
+```
+
+**2. Strategic Compliance**
+```
+🚨 STRATEGIC COMPLIANCE
+
+⚠️ Regime: UNCERTAIN
+📝 High volatility - Cash is King
+
+🔒 Closed: 3 position(s)
+💡 Reason: Non-compliant with current strategy
+```
+
+**3. Ошибки API**
+```
+❌ API ERROR
+
+Failed to place order: Connection timeout
 Symbol: BTCUSDT
-Action: Position blocked
-```
+Action: LONG
 
-### Ошибка API
-```
-🚨 API ERROR
-
-Bybit API unavailable
-Error: Connection timeout
-Retrying in 30s...
-```
-
-### Риск ликвидации
-```
-🚨 LIQUIDATION RISK
-
-Margin ratio: 85%
-Positions at risk: 2
-Action: Reduce leverage immediately
+⚠️ Check connection and retry
 ```
 
 ---
 
-## 🔧 ТЕХНИЧЕСКИЕ ДЕТАЛИ
+## 📊 Формат команды /orders
 
-### Архитектура
+### Открытые позиции
+```
+🟢 OPEN (количество):
+[emoji] SYMBOL SIDE
+   Entry: $price | Qty: quantity
+   Time: HH:MM UTC
+```
 
-**Класс:** `TelegramCommander`
+**Emoji:**
+- 🚀 = LONG (BUY)
+- 🐻 = SHORT (SELL)
 
-**Singleton:** `get_telegram_commander(executor, ai_brain, strategic_brain)`
+### Закрытые позиции
+```
+📜 RECENT CLOSED (last 10):
+[emoji] SYMBOL SIDE
+   PnL: $±amount | Exit: $price
+   Time: HH:MM | Duration: XXm/XXhXXm
+```
 
-**Работа:**
-- Асинхронный (не блокирует основной цикл торговли)
-- Polling mode (проверяет сообщения каждые 2 секунды)
-- Проверка админа (только `TELEGRAM_CHAT_ID` может писать)
+**Emoji:**
+- 💰 = Profit (net PnL > 0)
+- 🩸 = Loss (net PnL < 0)
 
-### Интеграция в `hybrid_loop.py`
-
+### Расчёт PnL
 ```python
-async def main():
-    loop = HybridTradingLoop()
+net_pnl = trade.pnl - (trade.fee_entry + trade.fee_exit)
+```
+
+Показывается **чистая прибыль** (после комиссий), а не валовая.
+
+---
+
+## 🚀 Deployment
+
+### Файлы изменены
+1. `core/telegram_notifier.py` - отключены notify_open/notify_close
+2. `core/telegram_commander.py` - добавлена команда /orders
+
+### Команды деплоя
+```bash
+# Копирование файлов
+scp core/telegram_notifier.py root@88.210.10.145:/root/Bybit_Trader/core/
+scp core/telegram_commander.py root@88.210.10.145:/root/Bybit_Trader/core/
+
+# Пересборка
+docker-compose build bot
+
+# Перезапуск
+docker stop bybit_bot && docker rm bybit_bot
+docker-compose up -d bot
+```
+
+### Проверка
+```bash
+# Логи
+docker logs bybit_bot --tail 50
+
+# Telegram
+# Отправить /start в бот
+# Проверить что команды работают
+```
+
+---
+
+## 💡 Преимущества SILENT MODE
+
+### 1. Нет спама
+- ❌ Было: 10-20 сообщений в день
+- ✅ Стало: 0 автоматических сообщений
+
+### 2. Контроль
+- ✅ Смотришь информацию когда нужно
+- ✅ Не отвлекают уведомления
+- ✅ Можно проверить в любой момент
+
+### 3. Читабельность
+- ✅ Команда /orders показывает всё сразу
+- ✅ Открытые + закрытые в одном месте
+- ✅ Компактный формат
+
+### 4. Гибкость
+- ✅ Можно включить уведомления для конкретных событий
+- ✅ Emergency уведомления остались
+- ✅ Легко добавить новые команды
+
+---
+
+## 🔧 Как включить уведомления обратно?
+
+Если нужны уведомления о сделках, можно включить выборочно:
+
+### Вариант 1: Только важные события
+```python
+# В telegram_notifier.py
+async def notify_close(...):
+    # Отправляем только если большой PnL
+    if abs(net_pnl) > 5.0:  # Больше $5
+        message = f"💰 BIG WIN: ${net_pnl:+.2f}"
+        await self.send_message(message)
+```
+
+### Вариант 2: Только прибыльные
+```python
+async def notify_close(...):
+    # Отправляем только прибыльные
+    if net_pnl > 0:
+        message = f"💰 PROFIT: ${net_pnl:+.2f}"
+        await self.send_message(message)
+```
+
+### Вариант 3: Дневная сводка
+```python
+# Раз в день отправлять сводку
+async def send_daily_summary():
+    trades_today = await get_trades_today()
+    total_pnl = sum(t.pnl for t in trades_today)
     
-    # Инициализируем Telegram Commander
-    commander = get_telegram_commander(
-        executor=loop.futures_executor,
-        ai_brain=loop.ai_brain,
-        strategic_brain=loop.ai_brain.strategic_brain
-    )
-    
-    # Запускаем в фоне
-    commander_task = asyncio.create_task(commander.start())
-    
-    # Запускаем основной цикл
-    await loop.run()
-    
-    # Останавливаем commander при выходе
-    await commander.stop()
-```
-
-### Конфигурация
-
-Использует существующие переменные из `.env`:
-
-```bash
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-TELEGRAM_CHAT_ID=your_chat_id_here
-```
-
-**Как получить:**
-
-1. **Bot Token:**
-   - Открыть [@BotFather](https://t.me/BotFather)
-   - `/newbot`
-   - Следовать инструкциям
-   - Скопировать токен
-
-2. **Chat ID:**
-   - Написать боту любое сообщение
-   - Открыть: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
-   - Найти `"chat":{"id":123456789}`
-   - Скопировать ID
-
-### Безопасность
-
-**Проверка админа:**
-```python
-def _is_admin(self, update: Update) -> bool:
-    return str(update.effective_chat.id) == str(self.admin_chat_id)
-```
-
-**Игнорирование чужих:**
-```python
-async def ignore_non_admin(self, update: Update, context):
-    if not self._is_admin(update):
-        print(f"🚫 Ignored message from non-admin: {update.effective_chat.id}")
-```
-
-Только админ может:
-- Видеть команды
-- Получать ответы
-- Активировать `/panic`
-
----
-
-## 📊 СРАВНЕНИЕ: Старый vs Новый
-
-### Старый `telegram_reporter.py`
-❌ Спам уведомлениями о каждой сделке  
-❌ Уведомления о funding rate  
-❌ Уведомления о TP/SL  
-❌ Нет интерактивности  
-❌ Нельзя управлять ботом  
-
-### Новый `telegram_commander.py`
-✅ SILENT MODE - молчит по умолчанию  
-✅ Интерактивные команды  
-✅ Управление ботом (`/panic`)  
-✅ Сводка по запросу (`/status`)  
-✅ Экстренные уведомления только при ЧП  
-
----
-
-## 🚀 DEPLOYMENT
-
-### Шаг 1: Обновить requirements.txt ✅
-```bash
-# Уже есть в requirements.txt
-python-telegram-bot==20.7
-```
-
-### Шаг 2: Обновить sklearn ✅
-```bash
-# requirements.txt
-scikit-learn==1.6.1  # Было 1.3.2
-```
-
-### Шаг 3: Копирование файлов
-```bash
-scp Bybit_Trader/requirements.txt root@88.210.10.145:/root/Bybit_Trader/
-scp Bybit_Trader/core/telegram_commander.py root@88.210.10.145:/root/Bybit_Trader/core/
-scp Bybit_Trader/core/hybrid_loop.py root@88.210.10.145:/root/Bybit_Trader/core/
-```
-
-### Шаг 4: Пересборка контейнера
-```bash
-ssh root@88.210.10.145 "cd /root/Bybit_Trader && docker-compose build --no-cache bot"
-```
-
-### Шаг 5: Перезапуск
-```bash
-ssh root@88.210.10.145 "cd /root/Bybit_Trader && docker-compose stop bot"
-ssh root@88.210.10.145 "docker rm -f bybit_bot"
-ssh root@88.210.10.145 "cd /root/Bybit_Trader && docker-compose up -d bot"
-```
-
-### Шаг 6: Проверка логов
-```bash
-ssh root@88.210.10.145 "docker logs -f bybit_bot | grep -E '(Telegram|Commander)'"
-```
-
-**Ожидаемый вывод:**
-```
-🤖 TelegramCommander initialized (SILENT MODE)
-   Admin Chat ID: 123456789
-✅ Telegram Commander started in background
-✅ TelegramCommander started (polling)
+    message = f"📊 Daily: {len(trades_today)} trades, ${total_pnl:+.2f}"
+    await send_message(message)
 ```
 
 ---
 
-## 🧪 ТЕСТИРОВАНИЕ
+## 📝 Примеры использования
 
-### 1. Проверка подключения
-Открыть Telegram → Написать боту: `/start`
-
-**Ожидаемый ответ:**
+### Утренняя проверка
 ```
-🤖 Bybit Trading Bot Commander
+Пользователь: /status
+Бот: 📊 STATUS REPORT
+     💰 Balance: $377.66
+     🟢 PnL: +$277.66 (+277.7%)
+     ...
 
-SILENT MODE - бот молчит по умолчанию
-...
-```
-
-### 2. Проверка статуса
-Написать: `/status`
-
-**Ожидаемый ответ:**
-```
-📊 STATUS REPORT
-
-💰 Balance: $379.10
-...
+Пользователь: /orders
+Бот: 📊 ORDERS
+     🟢 OPEN (3):
+     🚀 BNBUSDT BUY ...
+     ...
 ```
 
-### 3. Проверка безопасности
-Попросить друга написать боту `/start`
+### Проверка системы
+```
+Пользователь: /brain
+Бот: 🧠 BRAIN STATUS
+     Strategic Regime: SIDEWAYS
+     Gatekeepers: All Active
+     Safety: OK
+```
 
-**Ожидаемый результат:**
-- Бот НЕ отвечает
-- В логах: `🚫 Ignored message from non-admin: 987654321`
+### Emergency
+```
+Пользователь: /panic_test
+Бот: 🧪 PANIC TEST
+     Would close 3 positions ...
 
-### 4. Проверка panic mode
-Написать: `/panic`
-
-**Ожидаемый результат:**
-- Все позиции закрыты
-- Бот перестал торговать
-- Ответ: `✅ PANIC COMPLETE`
+Пользователь: /panic
+Бот: 🚨 PANIC ACTIVATED
+     ✅ PANIC COMPLETE
+     Closed positions: 3
+```
 
 ---
 
-## 📝 ОТКЛЮЧЕНИЕ СТАРОГО REPORTER
+## ✅ Итоги
 
-### Вариант А: Удалить импорты (рекомендуется)
+### Что изменилось
+- ✅ Отключены автоматические уведомления о сделках
+- ✅ Добавлена команда /orders для просмотра
+- ✅ Бот работает в SILENT MODE
+- ✅ Emergency уведомления остались
 
-В файлах где используется `telegram_reporter.py`:
-- `core/executors/futures_executor.py`
-- `core/strategic_brain.py`
-- и т.д.
+### Результаты
+- ✅ Нет спама в Telegram
+- ✅ Информация доступна по запросу
+- ✅ Читабельный формат /orders
+- ✅ Все команды работают
 
-Закомментировать:
-```python
-# from core.telegram_notifier import get_telegram_reporter
-```
-
-И все вызовы:
-```python
-# try:
-#     reporter = get_telegram_reporter()
-#     await reporter.notify_open(...)
-# except Exception as e:
-#     pass
-```
-
-### Вариант Б: Отключить в .env (быстрее)
-
-```bash
-# .env
-TELEGRAM_BOT_TOKEN=  # Оставить пустым
-TELEGRAM_CHAT_ID=    # Оставить пустым
-```
-
-Старый reporter не запустится, новый commander будет работать.
+### Команды
+- /start - Список команд
+- /status - Сводка
+- /brain - Состояние AI
+- **/orders - Последние ордера** ← НОВОЕ!
+- /balance - Детальный баланс
+- /panic_test - Тест emergency
+- /panic - Emergency stop
 
 ---
 
-## 🎯 ПРЕИМУЩЕСТВА
-
-### Для пользователя:
-✅ **Тишина** - нет спама уведомлениями  
-✅ **Контроль** - управление ботом из Telegram  
-✅ **Безопасность** - только админ имеет доступ  
-✅ **Экстренная остановка** - `/panic` в один клик  
-✅ **Мониторинг** - статус по запросу  
-
-### Для системы:
-✅ **Меньше нагрузки** - нет постоянных отправок  
-✅ **Асинхронность** - не блокирует торговлю  
-✅ **Модульность** - легко добавить новые команды  
-✅ **Graceful degradation** - если Telegram недоступен, бот продолжает работать  
-
----
-
-## 🔮 БУДУЩИЕ УЛУЧШЕНИЯ
-
-### Возможные команды:
-- `/positions` - Список открытых позиций с деталями
-- `/history` - Последние 10 сделок
-- `/settings` - Изменить параметры (leverage, risk, etc.)
-- `/pause` - Приостановить торговлю (без закрытия позиций)
-- `/resume` - Возобновить торговлю
-- `/stats` - Статистика за день/неделю/месяц
-
-### Возможные уведомления:
-- Большая прибыль (> $50 за сделку)
-- Большой убыток (> $20 за сделку)
-- Достижение целей (баланс $500, $1000, etc.)
-- Новый режим Strategic Brain (BULL_RUSH, BEAR_CRASH)
-
----
-
-## 📚 ДОКУМЕНТАЦИЯ
-
-### Файлы:
-- `core/telegram_commander.py` - Основной модуль
-- `core/hybrid_loop.py` - Интеграция в основной цикл
-- `TELEGRAM_COMMANDER_2025-12-12.md` - Этот файл
-
-### Библиотека:
-- [python-telegram-bot](https://docs.python-telegram-bot.org/)
-- Версия: 20.7
-- Async/await support: ✅
-
----
-
-**Автор:** Kiro AI  
-**Дата:** 12 декабря 2025, 01:40 UTC  
-**Статус:** ✅ Готово к деплою
+**Дата:** 2025-12-12 11:00 UTC  
+**Версия:** Telegram Commander v1.1 (SILENT MODE)  
+**Статус:** ✅ РАЗВЁРНУТО И РАБОТАЕТ  
+**Режим:** SILENT (уведомления только на команды)
