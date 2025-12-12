@@ -188,6 +188,11 @@
             <div class="metric-value" id="ml-samples">0</div>
             <div class="metric-sub" id="ml-status">обучается...</div>
         </div>
+        <div class="metric">
+            <div class="metric-label">🎯 Strategy Tier</div>
+            <div class="metric-value" id="strategy-tier">—</div>
+            <div class="metric-sub" id="strategy-tier-sub">loading...</div>
+        </div>
     </div>
     
     <!-- Charts -->
@@ -374,6 +379,19 @@ function updateUI(d) {
     document.getElementById('win-loss').textContent = wins + 'W / ' + losses + 'L';
     document.getElementById('open-positions').textContent = positions.length;
     document.getElementById('leverage').textContent = (futBal.leverage || 5) + 'x';
+    
+    // Strategy Tier
+    const tierInfo = d.tier_info || {};
+    if (tierInfo.current_tier) {
+        // Extract tier number from tier_id (e.g., "tier_2" -> "2")
+        const tierNum = tierInfo.tier_id ? tierInfo.tier_id.replace('tier_', '') : '—';
+        document.getElementById('strategy-tier').textContent = tierNum;
+        document.getElementById('strategy-tier-sub').textContent = tierInfo.current_tier || 'loading...';
+        
+        // Показываем активные пары в подсказке
+        const pairsText = tierInfo.active_pairs ? tierInfo.active_pairs.join(', ') : '';
+        document.getElementById('strategy-tier-sub').title = pairsText;
+    }
     
     // ML Status - обновляем из отдельного endpoint
     updateMLStatus();

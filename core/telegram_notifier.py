@@ -323,6 +323,32 @@ class TelegramReporter:
 
 
 # Singleton
+    async def notify_strategy_upgrade(self, tier_name: str, balance: float, 
+                                     active_pairs: list, max_positions: int) -> bool:
+        """
+        Уведомление о переключении Tier стратегии
+        
+        Args:
+            tier_name: Название нового Tier
+            balance: Текущий баланс
+            active_pairs: Активные торговые пары
+            max_positions: Максимум открытых позиций
+        """
+        message = (
+            f"🚀 <b>STRATEGY UPGRADE</b>\n\n"
+            f"💰 Balance: <b>${balance:.2f}</b>\n"
+            f"🎯 New Tier: <b>{tier_name}</b>\n\n"
+            f"📊 Active Pairs:\n"
+        )
+        
+        for pair in active_pairs:
+            message += f"   • {pair}\n"
+        
+        message += f"\n⚙️ Max Positions: <b>{max_positions}</b>"
+        
+        return await self.send_message(message)
+
+
 _telegram_reporter = None
 
 def get_telegram_notifier() -> TelegramReporter:

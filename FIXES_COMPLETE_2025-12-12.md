@@ -1,233 +1,164 @@
-# Исправления завершены - 12 декабря 2025, 21:50 UTC
+# ✅ FIXES COMPLETE - 12 декабря 2025
 
-## Выполненные задачи
+## Проблемы исправлены
 
-### ✅ 1. Self-Learning обучение на исторических данных
-**Проблема:** Модель обучена только на 360 реальных сделках.
+### 1. ❌ SQLAlchemy ValidationError "Extra inputs are not permitted"
+**Статус:** ✅ ИСПРАВЛЕНО
 
-**Решение:**
-- Обучили на 4,875 исторических свечах (1,000 на символ)
-- Итого: 5,230 samples (360 реальных + 4,870 исторических)
-- Model Accuracy: 95.83%
-- Win Rate: 5.1% (общий), 28.1% (реальные сделки)
-
-**Файлы:**
-- `train_on_historical_candles.py` - скрипт обучения
-- `ml_data/self_learner.pkl` - обученная модель (2.3 MB)
-
----
-
-### ✅ 2. Исправлена ошибка в check_self_learning.py
 **Проблема:**
 ```python
-KeyError: 'accuracy'
+# Было (неправильно):
+func.sum(func.case((Trade.pnl > 0, 1), else_=0))
 ```
 
-**Причина:** Метод `get_stats()` возвращает `'model_accuracy'`, а не `'accuracy'`.
+**Ошибка:**
+```
+⚠️ Failed to update trading stats: Function.__init__() got an unexpected keyword argument 'else_'
+```
 
 **Решение:**
 ```python
-# Было:
-print(f"      Accuracy: {stats['accuracy']:.2%}")
-
-# Стало:
-print(f"      Model Accuracy: {stats['model_accuracy']:.2%}")
-print(f"      Ready: {stats['ready']}")
+# Стало (правильно):
+from sqlalchemy import case
+func.sum(case((Trade.pnl > 0, 1), else_=0))
 ```
 
-**Результат:** Скрипт работает без ошибок ✅
+**Файл:** `core/hybrid_loop.py` (строка 403)
 
 ---
 
-### ✅ 3. Добавлены utility скрипты в Docker
-**Проблема:** `check_self_learning.py` не был в Docker образе.
+### 2. ❌ KeyError: 'close_time'
+**Статус:** ✅ ИСПРАВЛЕНО
 
-**Решение:**
-```dockerfile
-# Copy utility scripts
-COPY check_self_learning.py .
-COPY full_system_check.py .
-```
-
-**Результат:** Скрипты доступны внутри контейнера ✅
-
----
-
-### ✅ 4. Закрыты фантомные позиции на бирже
 **Проблема:**
-- БД: 1 открытая позиция
-- Bybit: 4 открытых позиции
-- Расхождение: 3 фантомные позиции
+```python
+# Было (неправильно):
+Trade.close_time >= yesterday
+```
 
-**Фантомные позиции:**
-1. XRPUSDT BUY 127.4 (unrealized PnL: -$1.72)
-2. SOLUSDT SELL 1.2 (unrealized PnL: +$6.12)
-3. BNBUSDT BUY 0.19 (unrealized PnL: -$1.03)
+**Ошибка:**
+```
+⚠️ Failed to update trading stats: type object 'Trade' has no attribute 'close_time'
+```
 
 **Решение:**
-Закрыли вручную через API:
 ```python
-# XRPUSDT: order_id 38ff2316-7f81-4066-9ddc-6a9020e9adcc
-# SOLUSDT: order_id 92f71bb8-8d0e-4775-9152-7b44a2c317d7
-# BNBUSDT: order_id 4606034f-d641-4266-ba9c-9251cfa28692
+# Стало (правильно):
+Trade.exit_time >= yesterday
 ```
 
-**Результат:**
+**Файл:** `core/hybrid_loop.py` (строка 416)
+
+**Причина:** В модели `Trade` поле называется `exit_time`, а не `close_time`.
+
+---
+
+### 3. ❌ Dashboard не показывает Strategy Tier
+**Статус:** ✅ ИСПРАВЛЕНО
+
+**Проблема:**
+- Tier info добавлен в API (`web/app.py`)
+- Но обновлен неправильный шаблон (`dashboard.html` вместо `dashboard_futures.html`)
+- Главный dashboard использует `dashboard_futures.html`
+
+**Решение:**
+1. Добавлена метрика "Strategy Tier" в `dashboard_futures.html`
+2. JavaScript обновлён для отображения tier_info из API
+3. Показывает номер тира (1, 2, 3) и название (Survival, Growth, Dominion)
+4. Tooltip показывает активные пары
+
+**Файл:** `web/templates/dashboard_futures.html`
+
+**Пример отображения:**
 ```
-БД:    1 открытая позиция (BTCUSDT SELL)
-Bybit: 1 открытая позиция (BTCUSDT SELL)
-✅ ПОЛНОЕ СОВПАДЕНИЕ!
+🎯 Strategy Tier
+      2
+   Growth Mode
 ```
 
 ---
 
-### ✅ 5. Полный анализ системы
-**Создан отчёт:** `SYSTEM_ANALYSIS_2025-12-12.md`
+## Deployment
 
-**Ключевые находки:**
-- ✅ ROI: +277.5% за 9 дней
-- ✅ Self-Learning работает корректно
-- ✅ Dynamic Balance исправлен (v7.2)
-- ⚠️ Win Rate 28.1% (цель 40%)
-- ⚠️ Нет сделок за 2 часа (строгие фильтры)
-- ❌ XRPUSDT/BTCUSDT убыточны
+### Файлы обновлены:
+1. ✅ `core/hybrid_loop.py` - исправлены SQLAlchemy ошибки
+2. ✅ `web/templates/dashboard_futures.html` - добавлен Strategy Tier
 
-**Рекомендации:**
-1. Смягчить фильтры (CHOP < 65, Pattern WR > 35%)
-2. Отключить XRPUSDT и BTCUSDT
-3. Оставить только SOL/ETH/BNB
+### Контейнеры пересобраны:
+1. ✅ `bybit_bot` - пересобран и перезапущен
+2. ✅ `bybit_dashboard` - пересобран и перезапущен
+
+### Проверка:
+```bash
+# Логи бота - нет ошибок
+docker logs bybit_bot --tail 100 | grep "Failed to update"
+# (пусто - ошибок нет!)
+
+# API возвращает tier_info
+curl http://localhost:8585/api/data | jq .tier_info
+{
+  "current_tier": "Growth Mode",
+  "tier_id": "tier_2",
+  "active_pairs": ["SOLUSDT", "ETHUSDT", "BNBUSDT"],
+  "balance": 377.48,
+  ...
+}
+```
 
 ---
 
-## 📊 Текущий статус систем
+## Текущий статус системы
 
 ### Баланс
-```
-Стартовый:  $100.00
-Текущий:    $377.53
-Profit:     +$277.53 (+277.5%)
-```
+- **Стартовый:** $100.00
+- **Текущий:** $377.48
+- **Profit:** +$277.48 (+277%)
 
-### Позиции
-```
-Открытых:   1 (BTCUSDT SELL 0.003)
-Фантомных:  0 ✅
-Синхронизация: ✅ ПОЛНОЕ СОВПАДЕНИЕ
-```
+### Strategy Tier
+- **Tier:** 2 (Growth Mode)
+- **Active Pairs:** SOLUSDT, ETHUSDT, BNBUSDT
+- **Excluded:** XRPUSDT (12.5% WR), BTCUSDT (0% WR)
+- **Max Positions:** 5
+- **Risk per Trade:** 10%
 
-### ML Системы
-```
-LSTM v2:         ✅ Активна (1.6 MB)
-Self-Learning:   ✅ Активна (2.3 MB, 5,230 samples)
-Strategic Brain: ✅ Активен (SIDEWAYS режим)
-```
-
-### Подсистемы
-```
-Multi-Agent:     ✅ Работает (100% SKIP - строгие фильтры)
-News Brain:      ✅ Работает (10 calls, 0 errors)
-Safety Guardian: ✅ Работает (0 violations)
-Sync Service:    ✅ Работает (15s interval)
-Telegram Bot:    ✅ SILENT MODE
-```
+### Системы
+- ✅ Strategic Brain (Gemini 2.5 Flash + Algion fallback)
+- ✅ Self-Learning (9,690 samples, 90.49% accuracy)
+- ✅ Limit Order Strategy (Maker fee 0.02%)
+- ✅ BTC Correlation Filter
+- ✅ Phantom Killer v3.0
+- ✅ Strategy Scaler (Tier-based auto-scaling)
+- ✅ Dashboard (tier display working)
 
 ---
 
-## 🔧 Deployment
+## Что было сделано
 
-### Изменённые файлы:
-```bash
-Bybit_Trader/check_self_learning.py  - исправлена ошибка
-Bybit_Trader/Dockerfile              - добавлены utility скрипты
-Bybit_Trader/ml_data/self_learner.pkl - обучена модель (5,230 samples)
-```
+1. **Исправлены 2 критические ошибки в hybrid_loop.py:**
+   - SQLAlchemy `else_` parameter error
+   - KeyError `close_time` (должно быть `exit_time`)
 
-### Команды деплоя:
-```bash
-# 1. Копируем файлы
-scp Bybit_Trader/check_self_learning.py root@88.210.10.145:/root/Bybit_Trader/
-scp Bybit_Trader/Dockerfile root@88.210.10.145:/root/Bybit_Trader/
+2. **Добавлено отображение Strategy Tier на Dashboard:**
+   - Новая метрика в metrics grid
+   - Показывает номер тира и название
+   - Tooltip с активными парами
 
-# 2. Обучаем модель
-ssh root@88.210.10.145 "docker exec bybit_bot python3 train_on_historical_candles.py"
-
-# 3. Пересобираем контейнер
-ssh root@88.210.10.145 "cd /root/Bybit_Trader && docker-compose build bot"
-ssh root@88.210.10.145 "docker rm 530cb0e5985b"
-ssh root@88.210.10.145 "cd /root/Bybit_Trader && docker-compose up -d bot"
-
-# 4. Закрываем фантомные позиции
-ssh root@88.210.10.145 "docker exec bybit_bot python3 -c '...'"
-
-# 5. Проверяем
-ssh root@88.210.10.145 "docker exec bybit_bot python3 check_self_learning.py"
-ssh root@88.210.10.145 "docker exec bybit_bot python3 full_system_check.py"
-```
+3. **Deployment на сервер:**
+   - Файлы скопированы через scp
+   - Контейнеры пересобраны
+   - Всё работает без ошибок
 
 ---
 
-## 📝 Созданные отчёты
+## Следующие шаги
 
-1. **SELF_LEARNING_TRAINING_2025-12-12.md**
-   - Обучение Self-Learning модели
-   - Анализ данных и метрик
-   - Рекомендации по дальнейшему обучению
-
-2. **SYSTEM_ANALYSIS_2025-12-12.md**
-   - Полный анализ всех систем
-   - Производительность по символам
-   - Критические проблемы и рекомендации
-
-3. **FIXES_COMPLETE_2025-12-12.md** (этот файл)
-   - Список выполненных задач
-   - Deployment инструкции
-   - Текущий статус
+Система работает стабильно. Можно:
+1. Мониторить производительность Tier 2 (Growth Mode)
+2. Отслеживать Maker Fill Rate для Limit Orders
+3. Проверять эффективность BTC Correlation Filter
+4. Ждать роста баланса до $600 для перехода в Tier 3 (Dominion Mode)
 
 ---
 
-## 🎯 Следующие шаги
-
-### Срочные (сегодня):
-- ✅ Self-Learning обучена
-- ✅ Фантомные позиции закрыты
-- ✅ Ошибки исправлены
-- ✅ Анализ системы выполнен
-
-### Краткосрочные (эта неделя):
-- ⏳ Смягчить фильтры (если нет сделок)
-- ⏳ Отключить XRPUSDT/BTCUSDT
-- ⏳ Мониторить Self-Learning улучшение
-
-### Долгосрочные (этот месяц):
-- ⏳ A/B тестирование параметров
-- ⏳ Добавить новые символы (AVAX, MATIC)
-- ⏳ Улучшить Win Rate до 40%+
-
----
-
-## ✅ Итоговый статус
-
-**Все задачи выполнены:**
-- ✅ Self-Learning обучена (5,230 samples)
-- ✅ Ошибки исправлены
-- ✅ Фантомные позиции закрыты
-- ✅ Система проанализирована
-- ✅ Отчёты созданы
-
-**Система работает стабильно:**
-- ✅ ROI: +277.5%
-- ✅ Все ML системы активны
-- ✅ Синхронизация: полное совпадение
-- ✅ Нет критических ошибок
-
-**Рекомендации выполнены:**
-- ✅ Dynamic Balance (v7.2)
-- ✅ Position Limit per Symbol
-- ✅ Telegram SILENT MODE
-- ✅ Sync Service v2.0
-
----
-
-**Дата:** 2025-12-12 21:50 UTC
-**Версия:** v7.2
-**Статус:** ✅ ВСЁ ГОТОВО!
+**Дата:** 2025-12-12 02:00 UTC  
+**Статус:** ✅ ВСЕ ИСПРАВЛЕНО И РАБОТАЕТ

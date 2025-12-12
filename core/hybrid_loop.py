@@ -23,6 +23,7 @@ from core.safety_guardian import get_safety_guardian
 from core.ai_logger import get_ai_logger
 
 from config import settings, is_spot_enabled, is_futures_enabled, get_spot_pairs, get_futures_pairs
+from core.strategy_scaler import get_strategy_scaler
 
 
 class HybridTradingLoop:
@@ -52,8 +53,12 @@ class HybridTradingLoop:
         # Safety Guardian - автоматический аудит позиций
         self.safety_guardian = get_safety_guardian() if is_futures_enabled() else None
         
+        # Strategy Scaler - динамическое масштабирование стратегии
+        self.strategy_scaler = get_strategy_scaler()
+        
         self.running = False
         self.cycle_count = 0
+        self.last_strategy_update = None  # Время последнего обновления стратегии
         
         print(f"\n🚀 HYBRID TRADING LOOP initialized:")
         print(f"   Mode: {settings.trading_mode}")
@@ -62,6 +67,7 @@ class HybridTradingLoop:
         if self.futures_executor:
             print(f"   Futures Virtual Balance: ${settings.futures_virtual_balance}")
             print(f"   Futures Leverage: {settings.futures_leverage}x")
+        print(f"   Strategy Scaler: ✅ Enabled (Tier-based auto-scaling)")
     
     async def log(self, level: LogLevel, message: str, extra_data: Dict = None):
         """Логирование в БД"""
@@ -390,11 +396,12 @@ class HybridTradingLoop:
             # Получаем статистику из БД
             async with async_session() as session:
                 # Общая статистика
+                from sqlalchemy import case
                 result = await session.execute(
                     select(
                         func.count(Trade.id).label('total'),
-                        func.sum(func.case((Trade.pnl > 0, 1), else_=0)).label('wins'),
-                        func.sum(func.case((Trade.pnl < 0, 1), else_=0)).label('losses'),
+                        func.sum(case((Trade.pnl > 0, 1), else_=0)).label('wins'),
+                        func.sum(case((Trade.pnl <= 0, 1), else_=0)).label('losses'),
                         func.sum(Trade.pnl).label('total_pnl')
                     ).where(Trade.status == 'CLOSED')
                 )
@@ -405,7 +412,7 @@ class HybridTradingLoop:
                 result_24h = await session.execute(
                     select(func.sum(Trade.pnl)).where(
                         Trade.status == 'CLOSED',
-                        Trade.close_time >= yesterday
+                        Trade.exit_time >= yesterday
                     )
                 )
                 pnl_24h = result_24h.scalar() or 0.0
@@ -433,6 +440,55 @@ class HybridTradingLoop:
         print("\n" + "="*80)
         print(f"🔄 Hybrid Cycle #{self.cycle_count} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print("="*80)
+        
+        # ========== STRATEGY SCALER: Динамическое масштабирование ==========
+        # Обновляем стратегию каждые 10 минут или при первом запуске
+        should_update_strategy = (
+            self.last_strategy_update is None or
+            (datetime.utcnow() - self.last_strategy_update).total_seconds() > 600  # 10 минут
+        )
+        
+        if should_update_strategy and self.futures_executor:
+            try:
+                # Получаем текущий баланс из БД
+                current_balance = await self.futures_executor.load_balance_from_db()
+                
+                # Проверка на None
+                if current_balance is None:
+                    print(f"⚠️ Balance is None, using config default")
+                    current_balance = settings.futures_virtual_balance
+                
+                # Обновляем стратегию
+                strategy_update = self.strategy_scaler.update_strategy(current_balance)
+                
+                if strategy_update['tier_changed']:
+                    # Tier изменился! Обновляем настройки
+                    print(f"\n🎯 STRATEGY SCALER: Applying new tier settings...")
+                    
+                    # Обновляем глобальные настройки
+                    settings.futures_pairs = strategy_update['active_pairs']
+                    settings.futures_max_open_positions = strategy_update['max_open_positions']
+                    settings.futures_risk_per_trade = strategy_update['risk_per_trade']
+                    settings.futures_min_confidence = strategy_update['min_confidence']
+                    
+                    print(f"   ✅ Settings updated:")
+                    print(f"      Active Pairs: {', '.join(strategy_update['active_pairs'])}")
+                    print(f"      Max Positions: {strategy_update['max_open_positions']}")
+                    print(f"      Risk per Trade: {strategy_update['risk_per_trade']*100:.0f}%")
+                    print(f"      Min Confidence: {strategy_update['min_confidence']*100:.0f}%")
+                    
+                    # Уведомление в Telegram
+                    await self.telegram.notify_strategy_upgrade(
+                        tier_name=strategy_update['tier_name'],
+                        balance=current_balance,
+                        active_pairs=strategy_update['active_pairs'],
+                        max_positions=strategy_update['max_open_positions']
+                    )
+                
+                self.last_strategy_update = datetime.utcnow()
+                
+            except Exception as e:
+                print(f"⚠️ Strategy Scaler error: {e}")
         
         # ========== STRATEGIC COMPLIANCE CHECK ==========
         # Проверяем соответствие открытых позиций текущему режиму Strategic Brain
@@ -535,8 +591,19 @@ class HybridTradingLoop:
             # Проверяем позиции
             await self.check_positions()
             
-            # Определяем пары для анализа (объединяем SPOT и FUTURES)
-            pairs = set(get_spot_pairs() + get_futures_pairs())
+            # Определяем пары для анализа
+            # Используем symbols_to_scan из Strategy Scaler (включает BTCUSDT для корреляции)
+            if self.strategy_scaler.current_tier:
+                # Получаем баланс с проверкой на None
+                balance = await self.futures_executor.load_balance_from_db() if self.futures_executor else 100.0
+                if balance is None:
+                    balance = settings.futures_virtual_balance
+                
+                strategy_info = self.strategy_scaler.update_strategy(balance)
+                pairs = set(strategy_info['symbols_to_scan'])
+            else:
+                # Fallback на статические пары
+                pairs = set(get_spot_pairs() + get_futures_pairs())
             
             # Анализируем каждую пару
             for symbol in pairs:

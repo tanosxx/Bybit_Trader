@@ -770,7 +770,7 @@ def get_data():
             stats = await get_stats()
             closed_trades = await get_recent_trades()
             open_trades = await get_open_trades()
-            balance_history = await get_balance_history()
+            # balance_history = await get_balance_history()  # Убрано - слишком большой объём данных
             logs = await get_recent_logs()
             futures_positions = await get_futures_positions()
             futures_balance = await get_futures_virtual_balance()
@@ -787,6 +787,31 @@ def get_data():
             except Exception as e:
                 ml_status = {'enabled': False, 'error': str(e)}
             
+            # Strategy Tier информация
+            try:
+                from core.strategy_scaler import get_strategy_scaler
+                scaler = get_strategy_scaler()
+                
+                # Получаем текущий баланс
+                current_balance = futures_balance.get('current_balance', 100.0)
+                
+                # Обновляем стратегию (без изменения настроек, только для получения info)
+                strategy_info = scaler.update_strategy(current_balance)
+                
+                tier_info = {
+                    'enabled': True,
+                    'current_tier': strategy_info['tier_name'],
+                    'tier_id': strategy_info['tier_id'],
+                    'balance': current_balance,
+                    'active_pairs': strategy_info['active_pairs'],
+                    'max_positions': strategy_info['max_open_positions'],
+                    'risk_per_trade': strategy_info['risk_per_trade'],
+                    'min_confidence': strategy_info['min_confidence'],
+                    'excluded_pairs': scaler.excluded_pairs
+                }
+            except Exception as e:
+                tier_info = {'enabled': False, 'error': str(e)}
+            
             return {
                 'balance': balance_data,
                 'stats': stats,
@@ -796,9 +821,10 @@ def get_data():
                 'futures_trades': futures_trades,
                 'futures_positions': futures_positions,
                 'futures_balance': futures_balance,
-                'balance_history': balance_history,
+                # 'balance_history': balance_history,  # Убрано - слишком большой объём
                 'logs': logs,
                 'ml_status': ml_status,
+                'tier_info': tier_info,
                 'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             }
         

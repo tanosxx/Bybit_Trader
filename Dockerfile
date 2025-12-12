@@ -22,6 +22,9 @@ COPY ml_data/ ./ml_data/
 COPY check_self_learning.py .
 COPY full_system_check.py .
 
+# Copy settings
+COPY settings.json .
+
 # Set PYTHONPATH
 ENV PYTHONPATH=/app
 

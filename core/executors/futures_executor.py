@@ -1442,7 +1442,7 @@ class FuturesExecutor(BaseExecutor):
         Рассчитывает: initial_balance + SUM(pnl) - SUM(fees)
         """
         if self._balance_loaded:
-            return  # Уже загружен
+            return self.virtual_balance  # Уже загружен, возвращаем текущий баланс
         
         try:
             from sqlalchemy import select, func
@@ -1474,9 +1474,12 @@ class FuturesExecutor(BaseExecutor):
                 print(f"   Fees: -${total_fees:.2f}")
                 print(f"   Current: ${self.virtual_balance:.2f} ({self.realized_pnl:+.2f})")
                 
+                return self.virtual_balance
+                
         except Exception as e:
             print(f"⚠️ Failed to load balance from DB: {e}")
             print(f"   Using config balance: ${self.virtual_balance:.2f}")
+            return self.virtual_balance
     
     def update_balance(self, pnl: float):
         """Обновить баланс после закрытия позиции"""

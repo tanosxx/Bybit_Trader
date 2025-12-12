@@ -46,6 +46,7 @@
         <div class="metric"><div class="metric-label">📈 Всего сделок</div><div class="metric-value" id="total-trades">0</div></div>
         <div class="metric"><div class="metric-label">🎯 Винрейт</div><div class="metric-value" id="winrate">0%</div></div>
         <div class="metric"><div class="metric-label">💵 Общий PnL</div><div class="metric-value" id="total-pnl">-</div></div>
+        <div class="metric" style="grid-column: span 2;"><div class="metric-label">🎯 Strategy Tier</div><div class="metric-value" id="strategy-tier" style="font-size: 1.2rem;">-</div></div>
     </div>
     <div class="section"><h2>💰 Балансы кошелька</h2><div class="balances-grid" id="balances-container">Загрузка...</div></div>
     <div class="section">
@@ -99,6 +100,15 @@ function updateUI(d) {
     var st = d.stats || {};
     document.getElementById('total-trades').textContent = st.total_trades || 0;
     document.getElementById('winrate').textContent = fmt(st.winrate, 1) + '%';
+
+    // Strategy Tier информация
+    var tier = d.tier_info || {};
+    if (tier.enabled) {
+        var tierText = tier.current_tier + ' (' + tier.active_pairs.join(', ') + ')';
+        document.getElementById('strategy-tier').innerHTML = tierText + '<br><span style="font-size: 0.7rem; color: #888;">Max: ' + tier.max_positions + ' | Risk: ' + (tier.risk_per_trade * 100).toFixed(0) + '%</span>';
+    } else {
+        document.getElementById('strategy-tier').textContent = 'N/A';
+    }
 
     var bals = b.balances || [];
     if (bals.length > 0) {

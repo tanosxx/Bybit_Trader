@@ -1,0 +1,42 @@
+{
+  "strategy_tiers": {
+    "tier_1": {
+      "name": "Survival Mode",
+      "description": "Conservative strategy for small balance",
+      "min_balance": 0,
+      "max_balance": 200,
+      "active_pairs": ["SOLUSDT", "ETHUSDT"],
+      "max_open_positions": 3,
+      "risk_per_trade": 0.12,
+      "min_confidence": 0.65
+    },
+    "tier_2": {
+      "name": "Growth Mode",
+      "description": "Balanced strategy for medium balance",
+      "min_balance": 200,
+      "max_balance": 600,
+      "active_pairs": ["SOLUSDT", "ETHUSDT", "BNBUSDT"],
+      "max_open_positions": 5,
+      "risk_per_trade": 0.10,
+      "min_confidence": 0.60
+    },
+    "tier_3": {
+      "name": "Dominion Mode",
+      "description": "Aggressive strategy for large balance",
+      "min_balance": 600,
+      "max_balance": 999999,
+      "active_pairs": ["SOLUSDT", "ETHUSDT", "BNBUSDT", "AVAXUSDT", "DOGEUSDT"],
+      "max_open_positions": 7,
+      "risk_per_trade": 0.08,
+      "min_confidence": 0.55
+    }
+  },
+  "excluded_pairs": {
+    "XRPUSDT": "Low WinRate (12.5%), high noise, removed from all tiers",
+    "BTCUSDT": "0% WinRate, unprofitable, removed from trading (kept for correlation analysis only)"
+  },
+  "scan_pairs": {
+    "description": "Pairs to scan for market data (includes BTC for correlation filter)",
+    "pairs": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "AVAXUSDT", "DOGEUSDT"]
+  }
+}
