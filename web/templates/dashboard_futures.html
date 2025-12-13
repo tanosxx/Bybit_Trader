@@ -193,6 +193,11 @@
             <div class="metric-value" id="strategy-tier">—</div>
             <div class="metric-sub" id="strategy-tier-sub">loading...</div>
         </div>
+        <div class="metric">
+            <div class="metric-label">🔄 Hybrid Strategy</div>
+            <div class="metric-value" id="hybrid-strategy-mode">—</div>
+            <div class="metric-sub" id="hybrid-strategy-sub">loading...</div>
+        </div>
     </div>
     
     <!-- Charts -->
@@ -391,6 +396,32 @@ function updateUI(d) {
         // Показываем активные пары в подсказке
         const pairsText = tierInfo.active_pairs ? tierInfo.active_pairs.join(', ') : '';
         document.getElementById('strategy-tier-sub').title = pairsText;
+    }
+    
+    // Hybrid Strategy
+    const hybridInfo = d.hybrid_strategy_info || {};
+    if (hybridInfo.enabled) {
+        const mode = hybridInfo.market_mode || 'UNKNOWN';
+        const strategy = hybridInfo.strategy_used || 'UNKNOWN';
+        const chop = hybridInfo.chop_value || 0;
+        
+        // Иконки для режимов
+        let modeIcon = '❓';
+        let modeText = mode;
+        if (mode === 'TREND') {
+            modeIcon = '🚀';
+            modeText = 'TREND';
+        } else if (mode === 'FLAT') {
+            modeIcon = '🔄';
+            modeText = 'FLAT';
+        }
+        
+        document.getElementById('hybrid-strategy-mode').textContent = modeIcon + ' ' + modeText;
+        document.getElementById('hybrid-strategy-sub').textContent = `CHOP: ${chop.toFixed(1)}`;
+        document.getElementById('hybrid-strategy-sub').title = `Strategy: ${strategy}\nCHOP Threshold: ${hybridInfo.chop_threshold}\nRSI: ${hybridInfo.rsi_oversold}/${hybridInfo.rsi_overbought}`;
+    } else {
+        document.getElementById('hybrid-strategy-mode').textContent = '❌';
+        document.getElementById('hybrid-strategy-sub').textContent = 'disabled';
     }
     
     // ML Status - обновляем из отдельного endpoint

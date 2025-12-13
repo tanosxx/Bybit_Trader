@@ -812,6 +812,47 @@ def get_data():
             except Exception as e:
                 tier_info = {'enabled': False, 'error': str(e)}
             
+            # Hybrid Strategy информация
+            try:
+                from config import settings
+                import json
+                import os
+                
+                market_mode = 'UNKNOWN'
+                chop_value = 0.0
+                strategy_used = 'UNKNOWN'
+                
+                # Читаем из файла состояния
+                state_file = '/app/hybrid_strategy_state.json'
+                if os.path.exists(state_file):
+                    try:
+                        with open(state_file, 'r') as f:
+                            state_data = json.load(f)
+                            market_mode = state_data.get('market_mode', 'UNKNOWN')
+                            chop_value = float(state_data.get('chop_value', 0))
+                            
+                            # Определяем стратегию по режиму
+                            if market_mode == 'FLAT':
+                                strategy_used = 'MEAN_REVERSION'
+                            elif market_mode == 'TREND':
+                                strategy_used = 'TREND_FOLLOWING'
+                    except Exception as read_error:
+                        pass  # Используем значения по умолчанию
+                
+                hybrid_strategy_info = {
+                    'enabled': settings.mean_reversion_enabled,
+                    'market_mode': market_mode,
+                    'strategy_used': strategy_used,
+                    'chop_value': chop_value,
+                    'chop_threshold': settings.chop_flat_threshold,
+                    'rsi_oversold': settings.rsi_oversold,
+                    'rsi_overbought': settings.rsi_overbought,
+                    'mean_reversion_min_confidence': settings.mean_reversion_min_confidence,
+                    'btc_safety_enabled': settings.mean_reversion_btc_safety
+                }
+            except Exception as e:
+                hybrid_strategy_info = {'enabled': False, 'error': str(e)}
+            
             return {
                 'balance': balance_data,
                 'stats': stats,
@@ -825,6 +866,7 @@ def get_data():
                 'logs': logs,
                 'ml_status': ml_status,
                 'tier_info': tier_info,
+                'hybrid_strategy_info': hybrid_strategy_info,
                 'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             }
         

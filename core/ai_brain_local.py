@@ -532,6 +532,142 @@ class LocalBrain:
             'btc_trend': btc_trend,
             'reason': f'BTC trend OK ({btc_trend:+.2f}%)'
         }
+    
+    def _get_mean_reversion_signal(
+        self,
+        symbol: str,
+        market_data: Dict,
+        chop: float,
+        btc_klines: list,
+        strategic_regime: str
+    ) -> Dict:
+        """
+        Mean Reversion Strategy для флэта (CHOP >= 60)
+        
+        Логика:
+        - BUY: RSI < 30 (oversold) + BTC не падает
+        - SELL: RSI > 70 (overbought) + BTC не растёт
+        
+        Args:
+            symbol: Торговая пара
+            market_data: Данные рынка
+            chop: CHOP индекс
+            btc_klines: Свечи BTC для проверки корреляции
+            strategic_regime: Режим от Strategic Brain
+        
+        Returns:
+            {
+                'decision': 'BUY'/'SELL'/'SKIP',
+                'confidence': float,
+                'reasoning': str,
+                'strategy': 'MEAN_REVERSION'
+            }
+        """
+        from config import settings
+        
+        # Проверяем что Mean Reversion включен
+        if not settings.mean_reversion_enabled:
+            return {
+                'decision': 'SKIP',
+                'confidence': 0.0,
+                'reasoning': 'Mean Reversion disabled',
+                'strategy': 'MEAN_REVERSION'
+            }
+        
+        # Проверяем Strategic Brain veto
+        if strategic_regime == REGIME_UNCERTAIN:
+            return {
+                'decision': 'SKIP',
+                'confidence': 0.0,
+                'reasoning': 'Strategic Brain: UNCERTAIN - no trading',
+                'strategy': 'MEAN_REVERSION'
+            }
+        
+        rsi = market_data.get('rsi', 50)
+        price = market_data.get('price', 0)
+        
+        # Получаем BTC тренд для безопасности
+        btc_trend = 0.0
+        if settings.mean_reversion_btc_safety and btc_klines:
+            btc_trend = self._get_btc_trend_strength(btc_klines)
+        
+        decision = 'SKIP'
+        confidence = 0.0
+        reasoning = ''
+        
+        # BUY Signal: RSI < 30 (oversold)
+        if rsi < settings.rsi_oversold:
+            # Проверяем что BTC не обваливается
+            if btc_trend > -0.5:  # BTC не падает сильно
+                decision = 'BUY'
+                # Confidence зависит от глубины oversold
+                if rsi < 20:
+                    confidence = 0.80  # Экстремально перепродан
+                elif rsi < 25:
+                    confidence = 0.75
+                else:
+                    confidence = 0.70
+                
+                reasoning = f'Mean Reversion: Oversold (RSI: {rsi:.1f}), BTC OK ({btc_trend:+.2f}%)'
+                
+                # Strategic Brain модификация
+                if strategic_regime == REGIME_BEAR_CRASH:
+                    # В медвежьем рынке - осторожнее
+                    confidence *= 0.8
+                    reasoning += ' [Bear Market - reduced conf]'
+                elif strategic_regime == REGIME_BULL_RUSH:
+                    # В бычьем рынке - увереннее
+                    confidence *= 1.1
+                    confidence = min(confidence, 0.95)
+                    reasoning += ' [Bull Market - boosted]'
+            else:
+                reasoning = f'Mean Reversion: Oversold BUT BTC dumping ({btc_trend:+.2f}%) - SKIP'
+        
+        # SELL Signal: RSI > 70 (overbought)
+        elif rsi > settings.rsi_overbought:
+            # Проверяем что BTC не пампится
+            if btc_trend < 0.5:  # BTC не растёт сильно
+                decision = 'SELL'
+                # Confidence зависит от глубины overbought
+                if rsi > 80:
+                    confidence = 0.80  # Экстремально перекуплен
+                elif rsi > 75:
+                    confidence = 0.75
+                else:
+                    confidence = 0.70
+                
+                reasoning = f'Mean Reversion: Overbought (RSI: {rsi:.1f}), BTC OK ({btc_trend:+.2f}%)'
+                
+                # Strategic Brain модификация
+                if strategic_regime == REGIME_BULL_RUSH:
+                    # В бычьем рынке - осторожнее с шортами
+                    confidence *= 0.8
+                    reasoning += ' [Bull Market - reduced conf]'
+                elif strategic_regime == REGIME_BEAR_CRASH:
+                    # В медвежьем рынке - увереннее с шортами
+                    confidence *= 1.1
+                    confidence = min(confidence, 0.95)
+                    reasoning += ' [Bear Market - boosted]'
+            else:
+                reasoning = f'Mean Reversion: Overbought BUT BTC pumping ({btc_trend:+.2f}%) - SKIP'
+        
+        else:
+            reasoning = f'Mean Reversion: RSI neutral ({rsi:.1f}) - waiting for extremes'
+        
+        # Проверяем минимальную confidence
+        if decision != 'SKIP' and confidence < settings.mean_reversion_min_confidence:
+            decision = 'SKIP'
+            reasoning += f' [Confidence too low: {confidence:.0%}]'
+            confidence = 0.0
+        
+        return {
+            'decision': decision,
+            'confidence': confidence,
+            'reasoning': reasoning,
+            'strategy': 'MEAN_REVERSION',
+            'rsi': rsi,
+            'btc_trend': btc_trend
+        }
 
     async def decide_trade(self, market_data: Dict) -> Dict:
         """
@@ -642,8 +778,10 @@ class LocalBrain:
                 'ta_confirmation': None
             }
         
-        # ========== GATEKEEPER LEVEL 1: CHOP CHECK ==========
+        # ========== GATEKEEPER LEVEL 1: CHOP CHECK + HYBRID STRATEGY SELECTOR ==========
         chop = 50.0  # Default neutral
+        market_mode = 'TREND'  # Default: Trend Following
+        
         try:
             klines = market_data.get('klines', [])
             if len(klines) >= 15:
@@ -661,31 +799,163 @@ class LocalBrain:
                     except:
                         pass
                 
-                # Проверка: CHOP > 60 (флэт/боковик)
-                if chop > self.chop_threshold:
-                    print(f"   🚫 Gatekeeper: Choppy Market (CHOP: {chop:.1f} > {self.chop_threshold})")
+                # ========== HYBRID STRATEGY SELECTOR ==========
+                from config import settings
+                
+                # Определяем режим рынка по CHOP
+                if chop >= settings.chop_flat_threshold:
+                    market_mode = 'FLAT'
+                    print(f"   🔄 Mode: FLAT (Mean Reversion) - CHOP: {chop:.1f}")
                     
-                    # Обновляем Gatekeeper status
-                    if STATE_AVAILABLE:
-                        try:
-                            state = get_global_brain_state()
-                            state.update_gatekeeper(symbol, f"BLOCK: CHOP {chop:.1f}")
-                        except:
-                            pass
+                    # Сохраняем данные о стратегии СРАЗУ
+                    try:
+                        import json
+                        strategy_data = {
+                            'market_mode': market_mode,
+                            'chop_value': float(chop),
+                            'symbol': symbol,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        with open('/app/hybrid_strategy_state.json', 'w') as f:
+                            json.dump(strategy_data, f)
+                        print(f"   💾 Saved strategy state: {market_mode}, CHOP: {chop:.1f}")
+                    except Exception as save_error:
+                        print(f"   ❌ Failed to save strategy state: {save_error}")
                     
-                    self.stats['skips'] += 1
-                    return {
-                        'decision': 'SKIP',
-                        'confidence': 0.0,
-                        'risk_score': 8,
-                        'source': DecisionSource.SAFETY_MODE.value,
-                        'reasoning': f'Choppy Market (CHOP: {chop:.1f})',
-                        'position_size_multiplier': 0.0,
-                        'news_sentiment': MarketSentiment.NEUTRAL.value,
-                        'ml_signal': None,
-                        'ta_confirmation': None,
-                        'gatekeeper': {'chop': chop, 'reason': 'CHOP_FILTER'}
-                    }
+                    # Если Mean Reversion включен - используем его
+                    if settings.mean_reversion_enabled:
+                        # Получаем BTC свечи для проверки
+                        btc_klines = market_data.get('btc_klines', [])
+                        if not btc_klines and self.api_client and symbol != 'BTCUSDT':
+                            try:
+                                btc_klines = await self.api_client.get_klines(
+                                    symbol='BTCUSDT',
+                                    interval='15',
+                                    limit=10
+                                )
+                            except:
+                                btc_klines = []
+                        
+                        # Получаем сигнал Mean Reversion
+                        mr_signal = self._get_mean_reversion_signal(
+                            symbol=symbol,
+                            market_data=market_data,
+                            chop=chop,
+                            btc_klines=btc_klines,
+                            strategic_regime=strategic_regime
+                        )
+                        
+                        # Если есть сигнал - возвращаем его
+                        if mr_signal['decision'] != 'SKIP':
+                            print(f"   ✅ Mean Reversion Signal: {mr_signal['decision']} (conf: {mr_signal['confidence']:.0%})")
+                            print(f"   📊 {mr_signal['reasoning']}")
+                            
+                            # Обновляем Gatekeeper status
+                            if STATE_AVAILABLE:
+                                try:
+                                    state = get_global_brain_state()
+                                    state.update_gatekeeper(symbol, "PASS: Mean Reversion")
+                                except:
+                                    pass
+                            
+                            # Обновляем статистику
+                            if mr_signal['decision'] == 'BUY':
+                                self.stats['buys'] += 1
+                            elif mr_signal['decision'] == 'SELL':
+                                self.stats['sells'] += 1
+                            
+                            self.stats['ml_confirmed'] += 1
+                            
+                            # Рассчитываем риск
+                            risk_score = 6  # Средний риск для Mean Reversion
+                            
+                            return {
+                                'decision': mr_signal['decision'],
+                                'confidence': mr_signal['confidence'],
+                                'risk_score': risk_score,
+                                'source': DecisionSource.TA_ONLY.value,
+                                'reasoning': mr_signal['reasoning'],
+                                'position_size_multiplier': 1.0,
+                                'news_sentiment': MarketSentiment.NEUTRAL.value,
+                                'ml_signal': None,
+                                'ta_confirmation': {'confirms': True, 'strength': 0.8},
+                                'strategy': 'MEAN_REVERSION',
+                                'market_mode': 'FLAT',
+                                'chop': chop,
+                                'rsi': mr_signal.get('rsi', 50),
+                                'btc_trend': mr_signal.get('btc_trend', 0.0)
+                            }
+                        else:
+                            # Mean Reversion не дал сигнала - SKIP
+                            print(f"   ⏸️  Mean Reversion: {mr_signal['reasoning']}")
+                            
+                            # Обновляем Gatekeeper status
+                            if STATE_AVAILABLE:
+                                try:
+                                    state = get_global_brain_state()
+                                    state.update_gatekeeper(symbol, f"SKIP: {mr_signal['reasoning']}")
+                                except:
+                                    pass
+                            
+                            self.stats['skips'] += 1
+                            return {
+                                'decision': 'SKIP',
+                                'confidence': 0.0,
+                                'risk_score': 5,
+                                'source': DecisionSource.SAFETY_MODE.value,
+                                'reasoning': f"FLAT Market: {mr_signal['reasoning']}",
+                                'position_size_multiplier': 0.0,
+                                'news_sentiment': MarketSentiment.NEUTRAL.value,
+                                'ml_signal': None,
+                                'ta_confirmation': None,
+                                'strategy': 'MEAN_REVERSION',
+                                'market_mode': 'FLAT',
+                                'chop': chop
+                            }
+                    else:
+                        # Mean Reversion отключен - блокируем флэт
+                        print(f"   🚫 Gatekeeper: Choppy Market (CHOP: {chop:.1f}), Mean Reversion disabled")
+                        
+                        if STATE_AVAILABLE:
+                            try:
+                                state = get_global_brain_state()
+                                state.update_gatekeeper(symbol, f"BLOCK: CHOP {chop:.1f}")
+                            except:
+                                pass
+                        
+                        self.stats['skips'] += 1
+                        return {
+                            'decision': 'SKIP',
+                            'confidence': 0.0,
+                            'risk_score': 8,
+                            'source': DecisionSource.SAFETY_MODE.value,
+                            'reasoning': f'Choppy Market (CHOP: {chop:.1f})',
+                            'position_size_multiplier': 0.0,
+                            'news_sentiment': MarketSentiment.NEUTRAL.value,
+                            'ml_signal': None,
+                            'ta_confirmation': None,
+                            'gatekeeper': {'chop': chop, 'reason': 'CHOP_FILTER'}
+                        }
+                else:
+                    # CHOP < 60 - ТРЕНД! Используем ML Trend Following
+                    market_mode = 'TREND'
+                    print(f"   🚀 Mode: TREND (ML Follower) - CHOP: {chop:.1f}")
+                    
+                    # Сохраняем данные о стратегии СРАЗУ
+                    try:
+                        import json
+                        strategy_data = {
+                            'market_mode': market_mode,
+                            'chop_value': float(chop),
+                            'symbol': symbol,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        with open('/app/hybrid_strategy_state.json', 'w') as f:
+                            json.dump(strategy_data, f)
+                        print(f"   💾 Saved strategy state: {market_mode}, CHOP: {chop:.1f}")
+                    except Exception as save_error:
+                        print(f"   ❌ Failed to save strategy state: {save_error}")
+        
         except Exception as e:
             print(f"   ⚠️ CHOP calculation error: {e}")
         

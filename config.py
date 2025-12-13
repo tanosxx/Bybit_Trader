@@ -104,6 +104,18 @@ class Settings(BaseSettings):
     maker_fee_rate: float = 0.0002  # 0.02% Maker fee (Bybit standard)
     taker_fee_rate: float = 0.00055  # 0.055% Taker fee (Bybit standard)
     
+    # ========== HYBRID STRATEGY SELECTOR ==========
+    # Автоматический выбор стратегии в зависимости от состояния рынка
+    mean_reversion_enabled: bool = True  # Включить Mean Reversion во флэте
+    chop_flat_threshold: float = 60.0  # CHOP >= 60 = флэт (Mean Reversion)
+    chop_trend_threshold: float = 60.0  # CHOP < 60 = тренд (Trend Following)
+    
+    # Mean Reversion параметры (для флэта)
+    rsi_oversold: int = 30  # RSI < 30 = перепродан (BUY signal)
+    rsi_overbought: int = 70  # RSI > 70 = перекуплен (SELL signal)
+    mean_reversion_min_confidence: float = 0.65  # Минимальная уверенность для Mean Reversion
+    mean_reversion_btc_safety: bool = True  # Проверять BTC тренд даже во флэте
+    
     # ========== TRADING HOURS FILTER ==========
     trading_hours_enabled: bool = False  # ОТКЛЮЧЕНО - торгуем 24/7
     trading_hours_start: int = 0  # Начало торговли (UTC)

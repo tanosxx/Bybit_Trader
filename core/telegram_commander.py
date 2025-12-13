@@ -75,6 +75,7 @@ class TelegramCommander:
             self.app.add_handler(CommandHandler("start", self.cmd_start))
             self.app.add_handler(CommandHandler("status", self.cmd_status))
             self.app.add_handler(CommandHandler("brain", self.cmd_brain))
+            self.app.add_handler(CommandHandler("strategy", self.cmd_strategy))
             self.app.add_handler(CommandHandler("orders", self.cmd_orders))
             self.app.add_handler(CommandHandler("panic", self.cmd_panic))
             self.app.add_handler(CommandHandler("panic_test", self.cmd_panic_test))
@@ -130,6 +131,7 @@ class TelegramCommander:
             "<b>Доступные команды:</b>\n"
             "/status - Сводка одним взглядом\n"
             "/brain - Что думает система\n"
+            "/strategy - 🔄 Hybrid Strategy статус\n"
             "/orders - Последние ордера\n"
             "/balance - Детальный баланс\n"
             "/panic_test - 🧪 Тест panic (без закрытия)\n"
@@ -190,6 +192,36 @@ class TelegramCommander:
             else:
                 regime = "UNKNOWN"
             
+            # Получаем Hybrid Strategy информацию
+            try:
+                from core.state import get_global_brain_state
+                brain_state = get_global_brain_state()
+                brain_state.load_from_file()
+                brain_data = brain_state.to_dict()
+                
+                # Извлекаем CHOP и режим
+                market_mode = "UNKNOWN"
+                chop_value = 0.0
+                strategy_used = "UNKNOWN"
+                
+                for symbol, data in brain_data.get('market_data', {}).items():
+                    if 'chop' in data and data['chop'] > 0:
+                        chop_value = data['chop']
+                        from config import settings
+                        if chop_value >= settings.chop_flat_threshold:
+                            market_mode = "FLAT 🔄"
+                            strategy_used = "Mean Reversion"
+                        else:
+                            market_mode = "TREND 🚀"
+                            strategy_used = "Trend Following"
+                        break
+                
+                hybrid_info = f"{market_mode} (CHOP: {chop_value:.1f})"
+                strategy_info = strategy_used
+            except:
+                hybrid_info = "N/A"
+                strategy_info = "N/A"
+            
             # Формируем сообщение
             pnl_emoji = "🟢" if pnl >= 0 else "🔴"
             
@@ -201,6 +233,8 @@ class TelegramCommander:
                 f"   🟢 Long: {long_count}\n"
                 f"   🔴 Short: {short_count}\n\n"
                 f"🧠 <b>Regime:</b> {regime}\n"
+                f"🔄 <b>Market Mode:</b> {hybrid_info}\n"
+                f"📊 <b>Strategy:</b> {strategy_info}\n"
                 f"⏰ <b>Time:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}"
             )
             
@@ -245,6 +279,78 @@ class TelegramCommander:
                 f"<b>Safety:</b>\n"
                 f"   🛡️ Guardian: OK\n"
                 f"   ⚠️ Panic Mode: {'ON' if self.panic_mode else 'OFF'}"
+            )
+            
+            await update.message.reply_text(message, parse_mode='HTML')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+    
+    async def cmd_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Детальная информация о Hybrid Strategy"""
+        if not self._is_admin(update):
+            return
+        
+        try:
+            from config import settings
+            from core.state import get_global_brain_state
+            
+            # Получаем текущее состояние
+            brain_state = get_global_brain_state()
+            brain_state.load_from_file()
+            brain_data = brain_state.to_dict()
+            
+            # Анализируем каждый символ
+            symbols_info = []
+            for symbol, data in brain_data.get('market_data', {}).items():
+                chop = data.get('chop', 0)
+                rsi = data.get('rsi', 50)
+                
+                if chop >= settings.chop_flat_threshold:
+                    mode = "FLAT 🔄"
+                    strategy = "Mean Reversion"
+                    
+                    # Определяем сигнал
+                    if rsi < settings.rsi_oversold:
+                        signal = f"BUY (RSI: {rsi:.1f} < {settings.rsi_oversold})"
+                    elif rsi > settings.rsi_overbought:
+                        signal = f"SELL (RSI: {rsi:.1f} > {settings.rsi_overbought})"
+                    else:
+                        signal = f"WAIT (RSI: {rsi:.1f})"
+                else:
+                    mode = "TREND 🚀"
+                    strategy = "Trend Following"
+                    signal = "ML Analysis"
+                
+                symbols_info.append(
+                    f"<b>{symbol}</b>\n"
+                    f"  Mode: {mode}\n"
+                    f"  CHOP: {chop:.1f}\n"
+                    f"  Signal: {signal}"
+                )
+            
+            # Формируем сообщение
+            message = (
+                f"🔄 <b>HYBRID STRATEGY STATUS</b>\n\n"
+                f"<b>Configuration:</b>\n"
+                f"  Enabled: {'✅' if settings.mean_reversion_enabled else '❌'}\n"
+                f"  CHOP Threshold: {settings.chop_flat_threshold}\n"
+                f"  RSI Oversold: {settings.rsi_oversold}\n"
+                f"  RSI Overbought: {settings.rsi_overbought}\n"
+                f"  Min Confidence: {settings.mean_reversion_min_confidence:.0%}\n"
+                f"  BTC Safety: {'✅' if settings.mean_reversion_btc_safety else '❌'}\n\n"
+                f"<b>Active Symbols:</b>\n"
+            )
+            
+            if symbols_info:
+                message += "\n".join(symbols_info)
+            else:
+                message += "  No data available"
+            
+            message += (
+                f"\n\n<b>Strategy Logic:</b>\n"
+                f"  CHOP &lt; {settings.chop_flat_threshold}: Trend Following (ML)\n"
+                f"  CHOP ≥ {settings.chop_flat_threshold}: Mean Reversion (RSI)"
             )
             
             await update.message.reply_text(message, parse_mode='HTML')
