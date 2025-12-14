@@ -395,6 +395,133 @@ async def check_strategic_brain():
         error(f"Ошибка Strategic Brain: {e}")
 
 
+async def check_hybrid_strategy():
+    """Проверка Hybrid Strategy"""
+    section("HYBRID STRATEGY (АДАПТИВНАЯ ТОРГОВЛЯ)")
+    
+    import json
+    
+    try:
+        
+        # Читаем состояние стратегии
+        strategy_state_path = 'ml_data/hybrid_strategy_state.json'
+        if os.path.exists(strategy_state_path):
+            with open(strategy_state_path, 'r') as f:
+                state = json.load(f)
+            
+            market_mode = state.get('market_mode', 'UNKNOWN')
+            chop_value = state.get('chop_value', 0)
+            symbol = state.get('symbol', 'N/A')
+            updated = state.get('updated_at') or state.get('timestamp', 'N/A')
+            
+            # Цвет режима
+            mode_colors = {
+                'TREND': C.G,
+                'FLAT': C.Y,
+                'UNKNOWN': C.R
+            }
+            mode_color = mode_colors.get(market_mode, C.W)
+            
+            ok("Hybrid Strategy активна")
+            
+            # Режим рынка
+            if market_mode == 'TREND':
+                info("Режим рынка", f"{market_mode} 🚀", mode_color)
+                info("Стратегия", "Trend Following (ML + Pattern Matching)")
+            elif market_mode == 'FLAT':
+                info("Режим рынка", f"{market_mode} 🔄", mode_color)
+                info("Стратегия", "Mean Reversion (RSI-based)")
+            else:
+                info("Режим рынка", market_mode, mode_color)
+                info("Стратегия", "UNKNOWN")
+            
+            info("CHOP Index", f"{chop_value:.1f}")
+            info("Символ", symbol)
+            
+            # Оценка CHOP
+            if chop_value < 40:
+                ok("Сильный тренд (CHOP < 40)")
+            elif chop_value < 60:
+                ok("Умеренный тренд (CHOP < 60)")
+            elif chop_value < 70:
+                warn("Флэт (CHOP >= 60)")
+            else:
+                warn("Сильный флэт (CHOP >= 70)")
+            
+            # Проверяем свежесть (если timestamp не "now")
+            if updated != 'N/A' and updated != 'now':
+                try:
+                    update_time = datetime.fromisoformat(updated.replace('Z', '+00:00'))
+                    age = datetime.now(update_time.tzinfo) - update_time
+                    age_seconds = age.total_seconds()
+                    
+                    if age_seconds < 300:  # 5 минут
+                        ok(f"Данные свежие ({age_seconds:.0f} секунд назад)")
+                    elif age_seconds < 600:  # 10 минут
+                        warn(f"Данные устарели ({age_seconds/60:.1f} минут назад)")
+                    else:
+                        error(f"Данные сильно устарели ({age_seconds/60:.1f} минут назад)")
+                except:
+                    pass
+            elif updated == 'now':
+                ok("Данные обновляются в реальном времени")
+            
+            # Конфигурация
+            print(f"\n   {C.BOLD}Конфигурация:{C.END}")
+            info("Mean Reversion", "✅ Включена" if settings.mean_reversion_enabled else "❌ Выключена")
+            info("CHOP Threshold", f"{settings.chop_flat_threshold:.0f}")
+            info("RSI Oversold", f"{settings.rsi_oversold}")
+            info("RSI Overbought", f"{settings.rsi_overbought}")
+            info("Min Confidence", f"{settings.mean_reversion_min_confidence*100:.0f}%")
+            info("BTC Safety", "✅ Включена" if settings.mean_reversion_btc_safety else "❌ Выключена")
+            
+            # Статистика по стратегиям
+            print(f"\n   {C.BOLD}Статистика сделок:{C.END}")
+            try:
+                async with async_session() as session:
+                    # Сделки по стратегиям (если есть поле в extra_data)
+                    result = await session.execute(text("""
+                        SELECT 
+                            COUNT(*) FILTER (WHERE extra_data->>'strategy' = 'TREND') as trend_trades,
+                            COUNT(*) FILTER (WHERE extra_data->>'strategy' = 'FLAT') as flat_trades,
+                            COUNT(*) FILTER (WHERE extra_data->>'strategy' IS NULL) as unknown_trades,
+                            ROUND(AVG(pnl) FILTER (WHERE extra_data->>'strategy' = 'TREND')::numeric, 2) as trend_avg_pnl,
+                            ROUND(AVG(pnl) FILTER (WHERE extra_data->>'strategy' = 'FLAT')::numeric, 2) as flat_avg_pnl
+                        FROM trades 
+                        WHERE status = 'CLOSED' AND market_type = 'futures'
+                    """))
+                    row = result.fetchone()
+                    
+                    trend_trades = row[0] or 0
+                    flat_trades = row[1] or 0
+                    unknown_trades = row[2] or 0
+                    trend_avg_pnl = float(row[3] or 0)
+                    flat_avg_pnl = float(row[4] or 0)
+                    
+                    total_hybrid = trend_trades + flat_trades
+                    
+                    if total_hybrid > 0:
+                        info("TREND сделок", f"{trend_trades} (Avg PnL: ${trend_avg_pnl:.2f})")
+                        info("FLAT сделок", f"{flat_trades} (Avg PnL: ${flat_avg_pnl:.2f})")
+                        
+                        if trend_trades > 0 and flat_trades > 0:
+                            ok("Обе стратегии используются")
+                        elif flat_trades == 0:
+                            warn("Mean Reversion ещё не использовалась")
+                    else:
+                        if unknown_trades > 0:
+                            warn(f"Все {unknown_trades} сделок без метки стратегии (старые сделки)")
+                        else:
+                            warn("Нет сделок с Hybrid Strategy")
+            except Exception as e:
+                error(f"Ошибка статистики стратегий: {e}")
+        else:
+            error("hybrid_strategy_state.json не найден")
+            warn("Hybrid Strategy может быть не активна")
+    except Exception as e:
+        error(f"Ошибка Hybrid Strategy: {e}")
+
+
 async def check_subsystems():
     """Проверка подсистем"""
     section("ПОДСИСТЕМЫ")
@@ -582,6 +709,7 @@ async def main():
     await check_market_status()
     await check_ml_system()
     await check_strategic_brain()
+    await check_hybrid_strategy()
     await check_subsystems()
     await check_configuration()
     await check_performance_by_symbol()

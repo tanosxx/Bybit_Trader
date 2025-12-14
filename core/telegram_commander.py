@@ -194,32 +194,33 @@ class TelegramCommander:
             
             # Получаем Hybrid Strategy информацию
             try:
-                from core.state import get_global_brain_state
-                brain_state = get_global_brain_state()
-                brain_state.load_from_file()
-                brain_data = brain_state.to_dict()
+                import json
+                import os
                 
-                # Извлекаем CHOP и режим
-                market_mode = "UNKNOWN"
-                chop_value = 0.0
-                strategy_used = "UNKNOWN"
-                
-                for symbol, data in brain_data.get('market_data', {}).items():
-                    if 'chop' in data and data['chop'] > 0:
-                        chop_value = data['chop']
-                        from config import settings
-                        if chop_value >= settings.chop_flat_threshold:
+                # Читаем из файла состояния
+                state_file = '/app/ml_data/hybrid_strategy_state.json'
+                if os.path.exists(state_file):
+                    with open(state_file, 'r') as f:
+                        state_data = json.load(f)
+                        market_mode = state_data.get('market_mode', 'UNKNOWN')
+                        chop_value = float(state_data.get('chop_value', 0))
+                        
+                        # Добавляем эмодзи
+                        if market_mode == 'FLAT':
                             market_mode = "FLAT 🔄"
-                            strategy_used = "Mean Reversion"
-                        else:
+                            strategy_info = "Mean Reversion"
+                        elif market_mode == 'TREND':
                             market_mode = "TREND 🚀"
-                            strategy_used = "Trend Following"
-                        break
-                
-                hybrid_info = f"{market_mode} (CHOP: {chop_value:.1f})"
-                strategy_info = strategy_used
-            except:
-                hybrid_info = "N/A"
+                            strategy_info = "Trend Following"
+                        else:
+                            strategy_info = "UNKNOWN"
+                        
+                        hybrid_info = f"{market_mode} (CHOP: {chop_value:.1f})"
+                else:
+                    hybrid_info = "N/A (file not found)"
+                    strategy_info = "N/A"
+            except Exception as e:
+                hybrid_info = f"N/A (error: {e})"
                 strategy_info = "N/A"
             
             # Формируем сообщение
@@ -293,41 +294,37 @@ class TelegramCommander:
         
         try:
             from config import settings
-            from core.state import get_global_brain_state
+            import json
+            import os
             
-            # Получаем текущее состояние
-            brain_state = get_global_brain_state()
-            brain_state.load_from_file()
-            brain_data = brain_state.to_dict()
-            
-            # Анализируем каждый символ
-            symbols_info = []
-            for symbol, data in brain_data.get('market_data', {}).items():
-                chop = data.get('chop', 0)
-                rsi = data.get('rsi', 50)
-                
-                if chop >= settings.chop_flat_threshold:
-                    mode = "FLAT 🔄"
-                    strategy = "Mean Reversion"
+            # Читаем текущее состояние из файла
+            state_file = '/app/ml_data/hybrid_strategy_state.json'
+            if os.path.exists(state_file):
+                with open(state_file, 'r') as f:
+                    state_data = json.load(f)
+                    market_mode = state_data.get('market_mode', 'UNKNOWN')
+                    chop_value = float(state_data.get('chop_value', 0))
+                    symbol = state_data.get('symbol', 'UNKNOWN')
                     
-                    # Определяем сигнал
-                    if rsi < settings.rsi_oversold:
-                        signal = f"BUY (RSI: {rsi:.1f} < {settings.rsi_oversold})"
-                    elif rsi > settings.rsi_overbought:
-                        signal = f"SELL (RSI: {rsi:.1f} > {settings.rsi_overbought})"
+                    # Определяем режим и стратегию
+                    if market_mode == 'FLAT':
+                        mode = "FLAT 🔄"
+                        strategy = "Mean Reversion"
+                    elif market_mode == 'TREND':
+                        mode = "TREND 🚀"
+                        strategy = "Trend Following"
                     else:
-                        signal = f"WAIT (RSI: {rsi:.1f})"
-                else:
-                    mode = "TREND 🚀"
-                    strategy = "Trend Following"
-                    signal = "ML Analysis"
-                
-                symbols_info.append(
-                    f"<b>{symbol}</b>\n"
-                    f"  Mode: {mode}\n"
-                    f"  CHOP: {chop:.1f}\n"
-                    f"  Signal: {signal}"
-                )
+                        mode = "UNKNOWN"
+                        strategy = "UNKNOWN"
+                    
+                    symbols_info = [
+                        f"<b>{symbol}</b> (last analyzed)\n"
+                        f"  Mode: {mode}\n"
+                        f"  CHOP: {chop_value:.1f}\n"
+                        f"  Strategy: {strategy}"
+                    ]
+            else:
+                symbols_info = []
             
             # Формируем сообщение
             message = (
