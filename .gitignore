@@ -1,5 +1,5 @@
-# Environment (включаем .env в приватный репо)
-# .env
+# Environment
+.env
 __pycache__/
 *.pyc
 *.pyo

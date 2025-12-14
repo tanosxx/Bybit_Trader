@@ -823,7 +823,7 @@ def get_data():
                 strategy_used = 'UNKNOWN'
                 
                 # Читаем из файла состояния
-                state_file = '/app/hybrid_strategy_state.json'
+                state_file = '/app/ml_data/hybrid_strategy_state.json'
                 if os.path.exists(state_file):
                     try:
                         with open(state_file, 'r') as f:

@@ -1,0 +1,132 @@
+{
+  "strategic": {
+    "regime": "SIDEWAYS",
+    "reason": "SIDEWAYS",
+    "last_update": "2025-12-14T11:42:04.381335"
+  },
+  "news": {
+    "sentiment": 0.0553,
+    "latest_headline": "\ud83d\ude10 Neutral market. Follow technical signals.",
+    "count": 5,
+    "last_update": "2025-12-14T12:07:40.771460"
+  },
+  "market": {
+    "chop_index": {
+      "SOLUSDT": 56.307746886256275,
+      "ETHUSDT": 49.65935389323723,
+      "BTCUSDT": 51.886740480158544,
+      "BNBUSDT": 66.04514746607012
+    },
+    "rsi_values": {
+      "SOLUSDT": 57.14,
+      "ETHUSDT": 62.27,
+      "BTCUSDT": 50.97,
+      "BNBUSDT": 46.67
+    },
+    "current_prices": {
+      "SOLUSDT": 132.81,
+      "ETHUSDT": 3115.09,
+      "BTCUSDT": 90146.2,
+      "BNBUSDT": 897.3
+    }
+  },
+  "ml_predictions": {
+    "SOLUSDT": {
+      "decision": "SELL",
+      "confidence": 0.55,
+      "change_pct": -0.5,
+      "timestamp": "2025-12-14T12:07:34.905330"
+    },
+    "ETHUSDT": {
+      "decision": "HOLD",
+      "confidence": 0.3,
+      "change_pct": -0.008454001363134012,
+      "timestamp": "2025-12-14T12:07:38.122233"
+    },
+    "BTCUSDT": {
+      "decision": "HOLD",
+      "confidence": 0.3,
+      "change_pct": -0.0007673967957089189,
+      "timestamp": "2025-12-14T12:07:40.962494"
+    },
+    "BNBUSDT": {
+      "decision": "HOLD",
+      "confidence": 0.3,
+      "change_pct": -0.008807465201243758,
+      "timestamp": "2025-12-14T12:01:35.917976"
+    }
+  },
+  "gatekeeper": {
+    "BNBUSDT": "SKIP: Mean Reversion: RSI neutral (42.1) - waiting for extremes",
+    "SOLUSDT": "PASS: Mean Reversion",
+    "ETHUSDT": "PASS",
+    "BTCUSDT": "PASS"
+  },
+  "decision_reasoning": {},
+  "positions": {
+    "active": [],
+    "count": 0
+  },
+  "system": {
+    "bot_running": true,
+    "last_scan": "2025-12-14T12:07:32.448425",
+    "total_decisions": 44
+  },
+  "performance": {
+    "total_trades": 394,
+    "winning_trades": 106,
+    "losing_trades": 288,
+    "win_rate": 26.903553299492383,
+    "total_pnl": 264.78925999999973,
+    "current_balance": 100.0,
+    "performance_24h": -30.16999999999991
+  },
+  "recent_trades": [],
+  "price_changes_24h": {},
+  "volumes": {},
+  "ai_reasoning": {
+    "strategic_text": "\ud83e\udde0 STRATEGIC BRAIN ANALYSIS (Updated: 11:42:04)\n\nMarket Regime: SIDEWAYS\n\nGemini Analysis:\nSIDEWAYS\n\nTrading Strategy:\n\u2192 Both LONG and SHORT allowed\n\u2192 Range-bound market, normal trading conditions\nNext Update: 0.5h or \u00b13.0% BTC move",
+    "news_analysis": "\ud83d\udcf0 NEWS ANALYSIS (BTCUSDT)\n\nSentiment Score: 0.055 (NEUTRAL)\nNews Count: 5 articles analyzed\n\nRecommendation:\n\ud83d\ude10 Neutral market. Follow technical signals.\n\nImpact Assessment:\n\ud83d\ude10 NEUTRAL - No strong sentiment\n\u2192 Follow technical signals"
+  },
+  "decision_flow": {
+    "step_0_strategic": {
+      "status": "pending",
+      "result": null,
+      "time_ms": 0
+    },
+    "step_1_trading_hours": {
+      "status": "pending",
+      "result": null,
+      "time_ms": 0
+    },
+    "step_2_chop_filter": {
+      "status": "pending",
+      "result": null,
+      "time_ms": 0
+    },
+    "step_3_pattern_filter": {
+      "status": "pending",
+      "result": null,
+      "time_ms": 0
+    },
+    "step_4_ml_confidence": {
+      "status": "pending",
+      "result": null,
+      "time_ms": 0
+    },
+    "step_5_fee_check": {
+      "status": "pending",
+      "result": null,
+      "time_ms": 0
+    },
+    "step_6_futures_brain": {
+      "status": "pending",
+      "result": null,
+      "time_ms": 0
+    },
+    "final_decision": {
+      "action": "SKIP",
+      "reason": "Not analyzed yet"
+    }
+  }
+}

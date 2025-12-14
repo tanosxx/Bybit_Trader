@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📈 Bybit FUTURES Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%); color: #fff; padding: 20px; min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 5px; font-size: 2rem; color: #ff8800; }
+        .subtitle { text-align: center; color: #888; margin-bottom: 25px; font-size: 0.9rem; }
+        .positive { color: #00ff88 !important; }
+        .negative { color: #ff4444 !important; }
+        
+        /* Main Balance Card */
+        .balance-hero { background: linear-gradient(135deg, rgba(255,136,0,0.2) 0%, rgba(255,68,0,0.1) 100%); border: 2px solid #ff8800; border-radius: 20px; padding: 30px; margin-bottom: 25px; text-align: center; }
+        .balance-hero h2 { color: #ff8800; font-size: 1rem; margin-bottom: 10px; }
+        .balance-hero .big-number { font-size: 3rem; font-weight: bold; margin-bottom: 5px; }
+        .balance-hero .pnl-row { display: flex; justify-content: center; gap: 30px; margin-top: 15px; }
+        .balance-hero .pnl-item { text-align: center; }
+        .balance-hero .pnl-label { font-size: 0.8rem; color: #888; }
+        .balance-hero .pnl-value { font-size: 1.3rem; font-weight: bold; }
+        
+        /* Metrics Grid */
+        .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 25px; }
+        .metric { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 18px; text-align: center; }
+        .metric:hover { border-color: #ff8800; }
+        .metric-label { font-size: 0.8rem; color: #888; margin-bottom: 8px; }
+        .metric-value { font-size: 1.4rem; font-weight: bold; }
+        .metric-sub { font-size: 0.75rem; color: #666; margin-top: 5px; }
+        
+        /* Two Column */
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        
+        /* Sections */
+        .section { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .section h2 { margin-bottom: 15px; font-size: 1.1rem; color: #ff8800; }
+        
+        /* Charts */
+        .chart-container { height: 250px; position: relative; }
+        
+        /* Positions Grid */
+        .positions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+        .position-card { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 18px; border-left: 4px solid #ff8800; }
+        .position-card.long { border-color: #00ff88; }
+        .position-card.short { border-color: #ff4444; }
+        .position-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .position-symbol { font-weight: bold; font-size: 1.2rem; }
+        .position-side { padding: 4px 12px; border-radius: 15px; font-size: 0.8rem; font-weight: bold; }
+        .position-side.long { background: rgba(0,255,136,0.2); color: #00ff88; }
+        .position-side.short { background: rgba(255,68,68,0.2); color: #ff4444; }
+        .position-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 0.9rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .position-row:last-child { border-bottom: none; }
+        .position-label { color: #888; }
+        .position-pnl { font-size: 1.4rem; font-weight: bold; margin-top: 12px; text-align: right; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
+        
+        /* Trades Table */
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        th { color: #ff8800; font-weight: 600; font-size: 0.85rem; }
+        td { font-size: 0.9rem; }
+        .side-long { color: #00ff88; font-weight: bold; }
+        .side-short { color: #ff4444; font-weight: bold; }
+        
+        /* Footer */
+        .timestamp { text-align: center; color: #666; margin-top: 20px; font-size: 0.8rem; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: #00ff88; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        @media (max-width: 1000px) { .metrics { grid-template-columns: repeat(3, 1fr); } .two-col { grid-template-columns: 1fr; } }
+        @media (max-width: 600px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📈 FUTURES Dashboard</h1>
+    <p class="subtitle">Bybit Demo Trading | Virtual Balance $100 | ISOLATED Margin | v2.0</p>
+    
+    <!-- Main Balance -->
+    <div class="balance-hero">
+        <h2>💰 ВИРТУАЛЬНЫЙ БАЛАНС</h2>
+        <div class="big-number" id="current-balance">$100.00</div>
+        <div class="pnl-row">
+            <div class="pnl-item">
+                <div class="pnl-label">Начальный</div>
+                <div class="pnl-value" id="initial-balance">$100.00</div>
+            </div>
+            <div class="pnl-item">
+                <div class="pnl-label">Realized PnL</div>
+                <div class="pnl-value positive" id="realized-pnl">+$0.00</div>
+            </div>
+            <div class="pnl-item">
+                <div class="pnl-label">💸 Комиссии</div>
+                <div class="pnl-value negative" id="total-fees">-$0.00</div>
+            </div>
+            <div class="pnl-item">
+                <div class="pnl-label">Net PnL</div>
+                <div class="pnl-value" id="net-pnl">$0.00</div>
+            </div>
+            <div class="pnl-item">
+                <div class="pnl-label">Изменение</div>
+                <div class="pnl-value" id="pnl-pct">0.00%</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Metrics -->
+    <div class="metrics">
+        <div class="metric">
+            <div class="metric-label">📊 Сделок</div>
+            <div class="metric-value" id="total-trades">0</div>
+            <div class="metric-sub">закрыто</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">🎯 Win Rate</div>
+            <div class="metric-value" id="winrate">0%</div>
+            <div class="metric-sub" id="win-loss">0W / 0L</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">📈 Открыто</div>
+            <div class="metric-value" id="open-positions">0</div>
+            <div class="metric-sub" id="open-positions-sub">позиций</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">⚡ Leverage</div>
+            <div class="metric-value" id="leverage">5x</div>
+            <div class="metric-sub">текущее</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">🧠 Self-Learning</div>
+            <div class="metric-value" id="ml-samples">0</div>
+            <div class="metric-sub" id="ml-status">обучается...</div>
+        </div>
+    </div>
+    
+    <!-- Charts -->
+    <div class="two-col">
+        <div class="section">
+            <h2>📈 Equity Curve (PnL накопительно)</h2>
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </div>
+        <div class="section">
+            <h2>📊 PnL по сделкам</h2>
+            <div class="chart-container">
+                <canvas id="pnlChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Open Positions -->
+    <div class="section">
+        <h2>🔥 Открытые позиции</h2>
+        <div class="positions-grid" id="positions-container">
+            <div style="color: #888; text-align: center; padding: 30px;">Нет открытых позиций</div>
+        </div>
+    </div>
+    
+    <!-- Recent Trades -->
+    <div class="section">
+        <h2>📋 Последние сделки</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Пара</th>
+                    <th>Сторона</th>
+                    <th>Вход</th>
+                    <th>Выход</th>
+                    <th>Кол-во</th>
+                    <th>PnL</th>
+                    <th>Причина</th>
+                    <th>Время</th>
+                </tr>
+            </thead>
+            <tbody id="trades-body">
+                <tr><td colspan="8" style="color:#888; text-align:center;">Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="timestamp">
+        <span class="status-dot"></span>
+        <span id="last-update">--</span>
+    </div>
+</div>
+
+<script>
+let equityChart, pnlChart;
+
+function initCharts() {
+    const ctx1 = document.getElementById('equityChart').getContext('2d');
+    equityChart = new Chart(ctx1, {
+        type: 'line',
+        data: { 
+            labels: [], 
+            datasets: [{ 
+                label: 'Equity', 
+                data: [], 
+                borderColor: '#ff8800', 
+                backgroundColor: 'rgba(255,136,0,0.1)', 
+                fill: true, 
+                tension: 0.4,
+                pointRadius: 2
+            }] 
+        },
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            plugins: { legend: { display: false } }, 
+            scales: { 
+                x: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#666', maxTicksLimit: 10 } }, 
+                y: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#888', callback: v => '$' + v.toFixed(0) } } 
+            } 
+        }
+    });
+    
+    const ctx2 = document.getElementById('pnlChart').getContext('2d');
+    pnlChart = new Chart(ctx2, {
+        type: 'bar',
+        data: { 
+            labels: [], 
+            datasets: [{ 
+                label: 'PnL', 
+                data: [], 
+                backgroundColor: [] 
+            }] 
+        },
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            plugins: { legend: { display: false } }, 
+            scales: { 
+                x: { display: false }, 
+                y: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#888', callback: v => '$' + v.toFixed(2) } } 
+            } 
+        }
+    });
+}
+
+function fmt(v, d) { 
+    return (v !== null && v !== undefined && !isNaN(Number(v))) ? Number(v).toFixed(d || 2) : '0.00'; 
+}
+
+// Показываем время как есть (сервер уже в UTC, браузер сам конвертирует)
+function formatTime(timeStr) {
+    if (!timeStr) return '-';
+    try {
+        // Просто извлекаем время из строки "YYYY-MM-DD HH:MM:SS"
+        const timePart = timeStr.split(' ')[1];
+        if (timePart) {
+            return timePart.substring(0, 5); // HH:MM
+        }
+        return '-';
+    } catch(e) {
+        return utcTimeStr.split(' ')[1] || '-';
+    }
+}
+
+function fetchData() {
+    fetch('/api/data')
+        .then(r => r.json())
+        .then(d => { 
+            if (!d.error) updateUI(d);
+        })
+        .catch(e => console.error(e));
+}
+
+function updateUI(d) {
+    const futBal = d.futures_balance || {};
+    const stats = d.stats?.futures || {};
+    const positions = d.futures_positions || [];
+    const trades = d.futures_trades || [];
+    
+    // Balance
+    const currentBal = futBal.current_balance || 100;
+    const initialBal = futBal.initial_balance || 100;
+    const realizedPnl = futBal.realized_pnl || 0;
+    const totalFees = futBal.total_fees || 0;
+    const netPnl = futBal.net_pnl || 0;
+    const pnlPct = futBal.pnl_pct || 0;
+    
+    document.getElementById('current-balance').textContent = '$' + fmt(currentBal);
+    document.getElementById('current-balance').className = 'big-number ' + (currentBal >= initialBal ? 'positive' : 'negative');
+    document.getElementById('initial-balance').textContent = '$' + fmt(initialBal);
+    
+    const realizedEl = document.getElementById('realized-pnl');
+    realizedEl.textContent = (realizedPnl >= 0 ? '+$' : '-$') + fmt(Math.abs(realizedPnl));
+    realizedEl.className = 'pnl-value ' + (realizedPnl >= 0 ? 'positive' : 'negative');
+    
+    const feesEl = document.getElementById('total-fees');
+    feesEl.textContent = '-$' + fmt(totalFees);
+    feesEl.className = 'pnl-value negative';
+    
+    const netPnlEl = document.getElementById('net-pnl');
+    netPnlEl.textContent = (netPnl >= 0 ? '+$' : '-$') + fmt(Math.abs(netPnl));
+    netPnlEl.className = 'pnl-value ' + (netPnl >= 0 ? 'positive' : 'negative');
+    
+    const pnlPctEl = document.getElementById('pnl-pct');
+    pnlPctEl.textContent = (pnlPct >= 0 ? '+' : '') + fmt(pnlPct) + '%';
+    pnlPctEl.className = 'pnl-value ' + (pnlPct >= 0 ? 'positive' : 'negative');
+    
+    // Metrics
+    const totalTrades = futBal.total_trades || stats.total_trades || 0;
+    const wins = stats.wins || 0;
+    const losses = totalTrades - wins;
+    const winrate = stats.winrate || 0;
+    
+    document.getElementById('total-trades').textContent = totalTrades;
+    document.getElementById('winrate').textContent = fmt(winrate, 1) + '%';
+    document.getElementById('win-loss').textContent = wins + 'W / ' + losses + 'L';
+    document.getElementById('open-positions').textContent = positions.length;
+    document.getElementById('leverage').textContent = (futBal.leverage || 5) + 'x';
+    
+    // ML Status
+    const mlStatus = d.ml_status || {};
+    if (mlStatus.enabled && mlStatus.ready) {
+        document.getElementById('ml-samples').textContent = mlStatus.learned_samples || 0;
+        document.getElementById('ml-status').textContent = `WR: ${fmt(mlStatus.win_rate || 0, 1)}%`;
+    } else if (mlStatus.enabled) {
+        document.getElementById('ml-samples').textContent = mlStatus.learned_samples || 0;
+        document.getElementById('ml-status').textContent = 'обучается...';
+    } else {
+        document.getElementById('ml-samples').textContent = '—';
+        document.getElementById('ml-status').textContent = 'отключено';
+    }
+    
+    // Показываем агрегацию позиций
+    const dbPositions = futBal.open_positions || 0;
+    const exchangePositions = positions.length;
+    if (dbPositions > exchangePositions) {
+        document.getElementById('open-positions-sub').textContent = `(${dbPositions} ордеров в БД)`;
+    } else {
+        document.getElementById('open-positions-sub').textContent = 'на бирже';
+    }
+    
+    // Positions
+    if (positions.length > 0) {
+        let html = '';
+        positions.forEach(p => {
+            const sideClass = p.side === 'LONG' ? 'long' : 'short';
+            const pnlClass = p.unrealized_pnl >= 0 ? 'positive' : 'negative';
+            const pnlPctPos = p.pnl_pct || 0;
+            
+            html += `<div class="position-card ${sideClass}">
+                <div class="position-header">
+                    <span class="position-symbol">${p.symbol}</span>
+                    <span class="position-side ${sideClass}">${p.side} ${p.leverage}x</span>
+                </div>
+                <div class="position-row"><span class="position-label">Размер:</span><span>${fmt(p.size, 4)}</span></div>
+                <div class="position-row"><span class="position-label">Вход:</span><span>$${fmt(p.entry_price)}</span></div>
+                <div class="position-row"><span class="position-label">Текущая:</span><span>$${fmt(p.mark_price)}</span></div>
+                <div class="position-row"><span class="position-label">Изменение:</span><span class="${pnlClass}">${pnlPctPos >= 0 ? '+' : ''}${fmt(pnlPctPos)}%</span></div>
+                <div class="position-pnl ${pnlClass}">${p.unrealized_pnl >= 0 ? '+' : ''}$${fmt(p.unrealized_pnl)}</div>
+            </div>`;
+        });
+        document.getElementById('positions-container').innerHTML = html;
+    } else {
+        document.getElementById('positions-container').innerHTML = '<div style="color: #888; text-align: center; padding: 30px;">Нет открытых позиций</div>';
+    }
+    
+    // Trades table
+    if (trades.length > 0) {
+        let html = '';
+        trades.slice(0, 15).forEach(t => {
+            const pnlClass = t.pnl >= 0 ? 'positive' : 'negative';
+            const sideClass = t.side === 'BUY' ? 'side-long' : 'side-short';
+            const sideText = t.side === 'BUY' ? 'LONG' : 'SHORT';
+            
+            html += `<tr>
+                <td>${t.symbol}</td>
+                <td class="${sideClass}">${sideText}</td>
+                <td>$${fmt(t.entry_price)}</td>
+                <td>$${fmt(t.exit_price)}</td>
+                <td>${fmt(t.quantity, 4)}</td>
+                <td class="${pnlClass}">${t.pnl >= 0 ? '+' : ''}$${fmt(t.pnl)}</td>
+                <td>${t.exit_reason || 'Manual'}</td>
+                <td>${t.exit_time ? formatTime(t.exit_time) : '-'}</td>
+            </tr>`;
+        });
+        document.getElementById('trades-body').innerHTML = html;
+    } else {
+        document.getElementById('trades-body').innerHTML = '<tr><td colspan="8" style="color:#888; text-align:center;">Нет закрытых сделок</td></tr>';
+    }
+    
+    // Equity chart - cumulative PnL
+    if (trades.length > 0) {
+        const sortedTrades = [...trades].reverse();
+        let cumPnl = initialBal;
+        const equityData = [initialBal];
+        const labels = ['Start'];
+        
+        sortedTrades.forEach((t, i) => {
+            cumPnl += (t.pnl || 0);
+            equityData.push(cumPnl);
+            labels.push(i + 1);
+        });
+        
+        equityChart.data.labels = labels;
+        equityChart.data.datasets[0].data = equityData;
+        equityChart.update();
+    }
+    
+    // PnL chart
+    if (trades.length > 0) {
+        const pnls = trades.slice(0, 25).map(t => t.pnl || 0).reverse();
+        pnlChart.data.labels = pnls.map((_, i) => i + 1);
+        pnlChart.data.datasets[0].data = pnls;
+        pnlChart.data.datasets[0].backgroundColor = pnls.map(p => p >= 0 ? '#00ff88' : '#ff4444');
+        pnlChart.update();
+    }
+    
+    document.getElementById('last-update').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+}
+
+initCharts();
+fetchData();
+setInterval(fetchData, 5000);
+</script>
+</body>
+</html>

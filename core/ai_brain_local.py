@@ -814,9 +814,9 @@ class LocalBrain:
                             'market_mode': market_mode,
                             'chop_value': float(chop),
                             'symbol': symbol,
-                            'timestamp': datetime.now().isoformat()
+                            'timestamp': 'now'
                         }
-                        with open('/app/hybrid_strategy_state.json', 'w') as f:
+                        with open('/app/ml_data/hybrid_strategy_state.json', 'w') as f:
                             json.dump(strategy_data, f)
                         print(f"   💾 Saved strategy state: {market_mode}, CHOP: {chop:.1f}")
                     except Exception as save_error:
@@ -948,9 +948,9 @@ class LocalBrain:
                             'market_mode': market_mode,
                             'chop_value': float(chop),
                             'symbol': symbol,
-                            'timestamp': datetime.now().isoformat()
+                            'timestamp': 'now'
                         }
-                        with open('/app/hybrid_strategy_state.json', 'w') as f:
+                        with open('/app/ml_data/hybrid_strategy_state.json', 'w') as f:
                             json.dump(strategy_data, f)
                         print(f"   💾 Saved strategy state: {market_mode}, CHOP: {chop:.1f}")
                     except Exception as save_error:
