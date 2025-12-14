@@ -802,8 +802,32 @@ class LocalBrain:
                 # ========== HYBRID STRATEGY SELECTOR ==========
                 from config import settings
                 
-                # Определяем режим рынка по CHOP
+                # Читаем предыдущий режим для гистерезиса
+                previous_mode = 'TREND'  # По умолчанию TREND
+                try:
+                    import json
+                    import os
+                    if os.path.exists('/app/ml_data/hybrid_strategy_state.json'):
+                        with open('/app/ml_data/hybrid_strategy_state.json', 'r') as f:
+                            prev_state = json.load(f)
+                            previous_mode = prev_state.get('market_mode', 'TREND')
+                except:
+                    pass
+                
+                # Определяем режим рынка по CHOP с гистерезисом
+                # Гистерезис: избегаем частых переключений в зоне 58-62
                 if chop >= settings.chop_flat_threshold:
+                    # CHOP >= 62 → однозначно FLAT
+                    market_mode = 'FLAT'
+                elif chop <= settings.chop_trend_threshold:
+                    # CHOP <= 58 → однозначно TREND
+                    market_mode = 'TREND'
+                else:
+                    # CHOP в зоне 58-62 → сохраняем предыдущий режим
+                    market_mode = previous_mode
+                    print(f"   ⚖️  Hysteresis Zone (CHOP: {chop:.1f}) - keeping {market_mode} mode")
+                
+                if market_mode == 'FLAT' and chop >= settings.chop_flat_threshold:
                     market_mode = 'FLAT'
                     print(f"   🔄 Mode: FLAT (Mean Reversion) - CHOP: {chop:.1f}")
                     
@@ -936,9 +960,8 @@ class LocalBrain:
                             'ta_confirmation': None,
                             'gatekeeper': {'chop': chop, 'reason': 'CHOP_FILTER'}
                         }
-                else:
-                    # CHOP < 60 - ТРЕНД! Используем ML Trend Following
-                    market_mode = 'TREND'
+                elif market_mode == 'TREND':
+                    # ТРЕНД! Используем ML Trend Following
                     print(f"   🚀 Mode: TREND (ML Follower) - CHOP: {chop:.1f}")
                     
                     # Сохраняем данные о стратегии СРАЗУ

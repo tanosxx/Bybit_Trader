@@ -107,8 +107,11 @@ class Settings(BaseSettings):
     # ========== HYBRID STRATEGY SELECTOR ==========
     # Автоматический выбор стратегии в зависимости от состояния рынка
     mean_reversion_enabled: bool = True  # Включить Mean Reversion во флэте
-    chop_flat_threshold: float = 60.0  # CHOP >= 60 = флэт (Mean Reversion)
-    chop_trend_threshold: float = 60.0  # CHOP < 60 = тренд (Trend Following)
+    
+    # CHOP пороги с гистерезисом (избегаем частых переключений)
+    chop_flat_threshold: float = 62.0  # CHOP >= 62 = переход в FLAT
+    chop_trend_threshold: float = 58.0  # CHOP <= 58 = переход в TREND
+    # Зона 58-62 = сохраняем текущий режим (гистерезис)
     
     # Mean Reversion параметры (для флэта)
     rsi_oversold: int = 30  # RSI < 30 = перепродан (BUY signal)
