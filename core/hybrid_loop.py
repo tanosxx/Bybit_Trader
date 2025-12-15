@@ -441,6 +441,25 @@ class HybridTradingLoop:
         print(f"🔄 Hybrid Cycle #{self.cycle_count} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print("="*80)
         
+        # ========== 🚨 EMERGENCY BRAKE - ПРИОРИТЕТ #1 ==========
+        # Проверяем критические риски ПЕРЕД всем остальным!
+        if self.futures_executor and settings.emergency_brake_enabled:
+            try:
+                print(f"\n🚨 EMERGENCY BRAKE: Checking critical risks...")
+                closed_count = await self.futures_executor.execute_emergency_closures()
+                
+                if closed_count > 0:
+                    # Уведомление в Telegram о экстренном закрытии
+                    await self.telegram.notify_emergency_closure(closed_count)
+                    print(f"   ✅ Emergency Brake: {closed_count} positions closed")
+                else:
+                    print(f"   ✅ All positions within safe limits")
+                    
+            except Exception as e:
+                print(f"   ⚠️ Emergency Brake error: {e}")
+                import traceback
+                traceback.print_exc()
+        
         # ========== STRATEGY SCALER: Динамическое масштабирование ==========
         # Обновляем стратегию каждые 10 минут или при первом запуске
         should_update_strategy = (
@@ -490,13 +509,12 @@ class HybridTradingLoop:
             except Exception as e:
                 print(f"⚠️ Strategy Scaler error: {e}")
         
-        # ========== STRATEGIC COMPLIANCE CHECK ==========
-        # Проверяем соответствие открытых позиций текущему режиму Strategic Brain
+        # ========== STRATEGIC COMPLIANCE CHECK (Soft Landing v2.0) ==========
+        # Умное управление позициями при смене режима Strategic Brain
         if self.futures_executor and self.ai_brain.strategic_brain:
             try:
-                from core.strategic_compliance import get_compliance_enforcer
                 from database.db import async_session
-                from database.models import Trade
+                from database.models import Trade, TradeSide
                 from sqlalchemy import select
                 
                 # Получаем текущий режим
@@ -512,56 +530,81 @@ class HybridTradingLoop:
                     )
                     open_trades = result.scalars().all()
                     
-                    if open_trades:
-                        # Преобразуем в формат для enforcer
-                        active_positions = [
-                            {
-                                'symbol': t.symbol,
-                                'side': t.side.value,
-                                'entry_price': float(t.entry_price),
-                                'quantity': float(t.quantity),
-                                'trade_id': t.id
-                            }
-                            for t in open_trades
-                        ]
+                    if open_trades and current_regime:
+                        positions_to_close = []
                         
-                        # Проверяем compliance
-                        enforcer = get_compliance_enforcer()
-                        positions_to_close = enforcer.enforce_strategic_compliance(
-                            active_positions, 
-                            current_regime
-                        )
+                        # ========== SOFT LANDING LOGIC ==========
+                        if current_regime == 'UNCERTAIN':
+                            # UNCERTAIN: НЕ закрываем позиции, только блокируем новые
+                            print(f"\n⚠️ Strategic Regime: UNCERTAIN")
+                            print(f"   🔒 Freezing new entries. Managing {len(open_trades)} existing positions.")
+                            print(f"   💡 Positions will close via TP/Trailing Stop/Emergency Brake")
+                            # НЕ добавляем позиции в positions_to_close!
                         
-                        # Закрываем несоответствующие позиции
+                        elif current_regime == 'BEAR_CRASH':
+                            # BEAR: Закрываем только LONG позиции
+                            print(f"\n🐻 Strategic Regime: BEAR_CRASH")
+                            for trade in open_trades:
+                                if trade.side == TradeSide.BUY:  # LONG позиция
+                                    positions_to_close.append({
+                                        'trade': trade,
+                                        'reason': 'Strategic Compliance: LONG in BEAR market'
+                                    })
+                                    print(f"   ❌ Closing LONG {trade.symbol} (against trend)")
+                                else:
+                                    print(f"   ✅ Keeping SHORT {trade.symbol} (with trend)")
+                        
+                        elif current_regime == 'BULL_RUSH':
+                            # BULL: Закрываем только SHORT позиции
+                            print(f"\n🐂 Strategic Regime: BULL_RUSH")
+                            for trade in open_trades:
+                                if trade.side == TradeSide.SELL:  # SHORT позиция
+                                    positions_to_close.append({
+                                        'trade': trade,
+                                        'reason': 'Strategic Compliance: SHORT in BULL market'
+                                    })
+                                    print(f"   ❌ Closing SHORT {trade.symbol} (against trend)")
+                                else:
+                                    print(f"   ✅ Keeping LONG {trade.symbol} (with trend)")
+                        
+                        elif current_regime == 'SIDEWAYS':
+                            # SIDEWAYS: Всё разрешено, ничего не закрываем
+                            print(f"\n↔️ Strategic Regime: SIDEWAYS")
+                            print(f"   ✅ All positions allowed. Managing {len(open_trades)} positions.")
+                        
+                        # Закрываем только несоответствующие позиции
                         if positions_to_close:
                             print(f"\n🚨 STRATEGIC COMPLIANCE: Closing {len(positions_to_close)} non-compliant positions")
                             
-                            for pos in positions_to_close:
-                                # Находим trade в БД
-                                trade_to_close = next(
-                                    (t for t in open_trades if t.symbol == pos['symbol'] and t.side.value == pos['side']),
-                                    None
-                                )
+                            for pos_info in positions_to_close:
+                                trade = pos_info['trade']
+                                reason = pos_info['reason']
                                 
-                                if trade_to_close:
-                                    # Закрываем позицию
-                                    trade_to_close.status = 'CLOSED'
-                                    trade_to_close.exit_time = datetime.utcnow()
-                                    trade_to_close.exit_price = trade_to_close.entry_price  # Закрываем по текущей цене
-                                    trade_to_close.exit_reason = pos['reason']
-                                    trade_to_close.pnl = 0.0  # Без PnL (закрываем принудительно)
+                                # Закрываем через executor (правильный расчёт PnL и комиссий)
+                                try:
+                                    result = await self.futures_executor.close_position(
+                                        symbol=trade.symbol,
+                                        reason=reason
+                                    )
                                     
-                                    print(f"   ✅ Closed {pos['symbol']} {pos['side']}: {pos['reason']}")
-                            
-                            await session.commit()
+                                    if result.success:
+                                        print(f"   ✅ Closed {trade.symbol} {trade.side.value}: {reason}")
+                                    else:
+                                        print(f"   ⚠️ Failed to close {trade.symbol}: {result.error}")
+                                        
+                                except Exception as e:
+                                    print(f"   ❌ Error closing {trade.symbol}: {e}")
                             
                             # Уведомление в Telegram
                             await self.telegram.notify_strategic_compliance(
                                 regime=current_regime,
                                 positions_closed=len(positions_to_close)
                             )
+                        
             except Exception as e:
                 print(f"⚠️ Strategic Compliance check error: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Обновляем GlobalBrainState - бот активен
         try:

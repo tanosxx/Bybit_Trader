@@ -1419,6 +1419,167 @@ class FuturesExecutor(BaseExecutor):
         """Public method"""
         return await self._close_position(symbol, reason)
     
+    # ========== EMERGENCY BRAKE (Hard Risk Management) ==========
+    
+    async def monitor_emergency_risks(self) -> List[Dict]:
+        """
+        🚨 EMERGENCY BRAKE - Жёсткий контроль убытков
+        
+        Проверяет ВСЕ открытые позиции на:
+        1. Hard Stop Loss - 2% движения цены против позиции
+        2. Time To Live (TTL) - максимум 3 часа удержания
+        
+        Работает НЕЗАВИСИМО от AI - это последняя линия защиты!
+        
+        Returns: List[Dict] - список позиций для экстренного закрытия
+        """
+        if not settings.emergency_brake_enabled:
+            return []
+        
+        positions_to_close = []
+        
+        try:
+            # Получаем все открытые позиции из БД
+            async with async_session() as session:
+                result = await session.execute(
+                    select(Trade).where(
+                        Trade.status == TradeStatus.OPEN,
+                        Trade.market_type == 'futures'
+                    )
+                )
+                open_trades = result.scalars().all()
+            
+            if not open_trades:
+                return []
+            
+            # Текущее время
+            now = datetime.utcnow()
+            
+            for trade in open_trades:
+                symbol = trade.symbol
+                entry_price = trade.entry_price
+                entry_time = trade.entry_time
+                position_side = trade.extra_data.get('position_side', 'UNKNOWN') if trade.extra_data else 'UNKNOWN'
+                
+                # Получаем текущую цену
+                try:
+                    ticker = await self.api.get_ticker(symbol)
+                    if not ticker:
+                        continue
+                    
+                    current_price = float(ticker.get('last_price') or ticker.get('lastPrice', 0))
+                    if current_price <= 0:
+                        continue
+                    
+                except Exception as e:
+                    print(f"   ⚠️ Failed to get price for {symbol}: {e}")
+                    continue
+                
+                # ========== CHECK 1: HARD STOP LOSS ==========
+                # Рассчитываем % изменения цены
+                if position_side == 'LONG':
+                    # LONG: убыток если цена упала
+                    price_change_pct = (current_price - entry_price) / entry_price
+                    
+                    if price_change_pct <= -settings.hard_stop_loss_percent:
+                        loss_pct = abs(price_change_pct) * 100
+                        positions_to_close.append({
+                            'trade': trade,
+                            'symbol': symbol,
+                            'reason': f'🚨 HARD STOP LOSS HIT: -{loss_pct:.2f}% (LONG)',
+                            'current_price': current_price,
+                            'entry_price': entry_price,
+                            'position_side': position_side,
+                            'trigger': 'HARD_SL'
+                        })
+                        print(f"   🚨 EMERGENCY: {symbol} LONG down {loss_pct:.2f}% (limit: {settings.hard_stop_loss_percent*100}%)")
+                        continue
+                
+                elif position_side == 'SHORT':
+                    # SHORT: убыток если цена выросла
+                    price_change_pct = (entry_price - current_price) / entry_price
+                    
+                    if price_change_pct <= -settings.hard_stop_loss_percent:
+                        loss_pct = abs(price_change_pct) * 100
+                        positions_to_close.append({
+                            'trade': trade,
+                            'symbol': symbol,
+                            'reason': f'🚨 HARD STOP LOSS HIT: -{loss_pct:.2f}% (SHORT)',
+                            'current_price': current_price,
+                            'entry_price': entry_price,
+                            'position_side': position_side,
+                            'trigger': 'HARD_SL'
+                        })
+                        print(f"   🚨 EMERGENCY: {symbol} SHORT up {loss_pct:.2f}% (limit: {settings.hard_stop_loss_percent*100}%)")
+                        continue
+                
+                # ========== CHECK 2: TIME TO LIVE (TTL) ==========
+                if entry_time:
+                    hold_time_minutes = (now - entry_time).total_seconds() / 60
+                    
+                    if hold_time_minutes > settings.max_hold_time_minutes:
+                        positions_to_close.append({
+                            'trade': trade,
+                            'symbol': symbol,
+                            'reason': f'⏰ ZOMBIE TRADE (TTL EXPIRED): {hold_time_minutes:.0f} min > {settings.max_hold_time_minutes} min',
+                            'current_price': current_price,
+                            'entry_price': entry_price,
+                            'position_side': position_side,
+                            'trigger': 'TTL_EXPIRED'
+                        })
+                        print(f"   ⏰ ZOMBIE TRADE: {symbol} held for {hold_time_minutes:.0f} min (limit: {settings.max_hold_time_minutes} min)")
+                        continue
+            
+            if positions_to_close:
+                print(f"\n🚨 EMERGENCY BRAKE: {len(positions_to_close)} positions need immediate closure!")
+            
+            return positions_to_close
+            
+        except Exception as e:
+            print(f"   ⚠️ Emergency risk monitor error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    async def execute_emergency_closures(self) -> int:
+        """
+        Выполнить экстренное закрытие позиций
+        
+        Returns: количество закрытых позиций
+        """
+        positions_to_close = await self.monitor_emergency_risks()
+        
+        if not positions_to_close:
+            return 0
+        
+        closed_count = 0
+        
+        for pos_info in positions_to_close:
+            symbol = pos_info['symbol']
+            reason = pos_info['reason']
+            
+            try:
+                print(f"\n🚨 EMERGENCY CLOSING: {symbol}")
+                print(f"   Reason: {reason}")
+                
+                result = await self._close_position(symbol, reason)
+                
+                if result.success:
+                    closed_count += 1
+                    print(f"   ✅ Emergency closure successful")
+                else:
+                    print(f"   ❌ Emergency closure failed: {result.error}")
+                
+            except Exception as e:
+                print(f"   ❌ Emergency closure error: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        if closed_count > 0:
+            print(f"\n✅ Emergency Brake: Closed {closed_count}/{len(positions_to_close)} positions")
+        
+        return closed_count
+    
     # ========== HELPERS ==========
     
     async def get_balance(self) -> float:

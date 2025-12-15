@@ -347,6 +347,25 @@ class TelegramReporter:
         message += f"\n⚙️ Max Positions: <b>{max_positions}</b>"
         
         return await self.send_message(message)
+    
+    async def notify_emergency_closure(self, closed_count: int) -> bool:
+        """
+        🚨 Уведомление об экстренном закрытии позиций (Emergency Brake)
+        
+        Args:
+            closed_count: Количество закрытых позиций
+        """
+        message = (
+            f"🚨 <b>EMERGENCY BRAKE ACTIVATED</b>\n\n"
+            f"⚠️ Critical risk detected!\n"
+            f"🔒 Closed positions: <b>{closed_count}</b>\n\n"
+            f"Reasons:\n"
+            f"• Hard Stop Loss hit (>2% loss)\n"
+            f"• OR Zombie trade (>3 hours)\n\n"
+            f"✅ System protected from further losses"
+        )
+        
+        return await self.send_message(message)
 
 
 _telegram_reporter = None

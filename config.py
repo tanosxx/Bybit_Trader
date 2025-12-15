@@ -155,6 +155,12 @@ class Settings(BaseSettings):
     take_profit_pct: float = 3.0  # +3% (R:R = 1:2)
     max_drawdown_pct: float = 15.0  # -15% emergency stop (ужесточено)
     
+    # ========== HARD RISK MANAGEMENT (Emergency Brake) ==========
+    # Жёсткий контроль убытков на уровне Executor (игнорирует AI)
+    hard_stop_loss_percent: float = 0.02  # 2% движения цены против позиции = EMERGENCY EXIT
+    max_hold_time_minutes: int = 180  # 3 часа максимум (180 минут) = ZOMBIE TRADE KILLER
+    emergency_brake_enabled: bool = True  # Включить Emergency Brake (КРИТИЧНО!)
+    
     # Trading Pairs
     trading_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
     
