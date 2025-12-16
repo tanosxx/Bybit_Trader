@@ -20,6 +20,9 @@ pandas==2.1.4
 # Dashboard
 flask==3.0.0
 
+# Visualization (для Telegram графиков)
+matplotlib==3.8.2
+
 # Telegram
 python-telegram-bot==20.7
 

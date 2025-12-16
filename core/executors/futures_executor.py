@@ -1452,14 +1452,20 @@ class FuturesExecutor(BaseExecutor):
             if not open_trades:
                 return []
             
-            # Текущее время
-            now = datetime.utcnow()
+            # Текущее время (UTC aware)
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
             
             for trade in open_trades:
                 symbol = trade.symbol
                 entry_price = trade.entry_price
                 entry_time = trade.entry_time
                 position_side = trade.extra_data.get('position_side', 'UNKNOWN') if trade.extra_data else 'UNKNOWN'
+                
+                # Конвертируем entry_time в aware datetime если нужно
+                if entry_time and entry_time.tzinfo is None:
+                    # Если naive - считаем что это UTC
+                    entry_time = entry_time.replace(tzinfo=timezone.utc)
                 
                 # Получаем текущую цену
                 try:
@@ -1517,6 +1523,9 @@ class FuturesExecutor(BaseExecutor):
                 if entry_time:
                     hold_time_minutes = (now - entry_time).total_seconds() / 60
                     
+                    # DEBUG LOG для диагностики
+                    print(f"   🧟 Zombie Check: {symbol} Open={entry_time.strftime('%H:%M:%S UTC')}, Now={now.strftime('%H:%M:%S UTC')}, Duration={hold_time_minutes:.1f}m / Limit={settings.max_hold_time_minutes}m")
+                    
                     if hold_time_minutes > settings.max_hold_time_minutes:
                         positions_to_close.append({
                             'trade': trade,
@@ -1527,7 +1536,7 @@ class FuturesExecutor(BaseExecutor):
                             'position_side': position_side,
                             'trigger': 'TTL_EXPIRED'
                         })
-                        print(f"   ⏰ ZOMBIE TRADE: {symbol} held for {hold_time_minutes:.0f} min (limit: {settings.max_hold_time_minutes} min)")
+                        print(f"   ⏰ ZOMBIE TRADE DETECTED: {symbol} held for {hold_time_minutes:.0f} min (limit: {settings.max_hold_time_minutes} min)")
                         continue
             
             if positions_to_close:

@@ -58,26 +58,26 @@ class FuturesBrain:
         self.agents = {
             'conservative': {
                 'weight': 3,
-                'min_confidence': 60,  # Снижено с 65 - хорошие сигналы
+                'min_confidence': 70,  # SAFE MODE: только отличные сигналы
                 'require_ta': True,
-                'max_risk': 6
+                'max_risk': 5
             },
             'balanced': {
                 'weight': 2,
-                'min_confidence': 45,  # Снижено с 50 - средние сигналы
-                'require_ta': False,  # УБРАНО требование TA - даём больше шансов
-                'max_risk': 7
+                'min_confidence': 60,  # SAFE MODE: хорошие сигналы
+                'require_ta': True,  # ТРЕБУЕМ TA подтверждение
+                'max_risk': 6
             },
             'aggressive': {
                 'weight': 1,
-                'min_confidence': 35,  # Снижено с 40 - слабые сигналы тоже пропускаем
+                'min_confidence': 50,  # SAFE MODE: минимум средние сигналы
                 'require_ta': False,
-                'max_risk': 8
+                'max_risk': 7
             }
         }
         
-        # Порог для входа - СНИЖЕН до 2 (достаточно 1 агента Balanced или Conservative + Aggressive)
-        self.min_score_to_trade = 2  # balanced (2) = 2 ИЛИ aggressive (1) + conservative (3) = 4
+        # Порог для входа - ПОВЫШЕН до 3 (нужен консенсус)
+        self.min_score_to_trade = 3  # conservative (3) ИЛИ balanced (2) + aggressive (1)
         
         # Лимит потерь на сделку (% от депозита)
         self.max_loss_per_trade_pct = 2.0
@@ -94,25 +94,25 @@ class FuturesBrain:
     
     def scale_confidence(self, raw_confidence: float) -> float:
         """
-        Smart Scaling: масштабирование ML confidence
+        Smart Scaling: масштабирование ML confidence (BALANCED)
         
         Raw ML выдаёт 0.30-0.65 (LSTM часто даёт 0.30 для HOLD)
-        Масштабируем более агрессивно:
+        Масштабируем сбалансированно (не слишком агрессивно):
         
-        Формула: trading_conf = (raw - 0.30) / 0.35 * 70 + 30
+        Формула: trading_conf = (raw - 0.30) / 0.35 * 55 + 30
         - raw 0.30 -> 30%
-        - raw 0.50 -> 70%
-        - raw 0.60 -> 94%
-        - raw 0.65 -> 100%
+        - raw 0.50 -> 61%
+        - raw 0.60 -> 78%
+        - raw 0.65 -> 85% (MAX - не даём 100%!)
         """
         if raw_confidence <= 0.30:
             return 30.0
         elif raw_confidence >= 0.65:
-            return 100.0
+            return 85.0  # MAX 85% (было 100%)
         else:
-            # Агрессивное масштабирование 0.30-0.65 -> 30-100
-            scaled = ((raw_confidence - 0.30) / 0.35) * 70 + 30
-            return min(100.0, max(30.0, scaled))
+            # Сбалансированное масштабирование 0.30-0.65 -> 30-85
+            scaled = ((raw_confidence - 0.30) / 0.35) * 55 + 30
+            return min(85.0, max(30.0, scaled))
     
     def get_dynamic_leverage(self, trading_confidence: float) -> int:
         """

@@ -59,11 +59,11 @@ class Settings(BaseSettings):
     spot_virtual_balance: float = 100.0  # Виртуальный лимит для SPOT
     spot_risk_per_trade: float = 0.10  # 10% от баланса на сделку
     
-    # ========== FUTURES Settings - SMART GROWTH $100 ==========
+    # ========== FUTURES Settings - SAFE MODE (SNIPER) ==========
     # КРИТИЧНО: Бот использует ТОЛЬКО этот баланс для расчёта позиций!
-    futures_virtual_balance: float = 100.0  # $100 стартовый капитал (Smart Growth)
-    futures_leverage: int = 5  # Плечо 5x (Buying Power $500 - безопасно)
-    futures_risk_per_trade: float = 0.12  # 12% от баланса в маржу = $12 (позиция $60 с плечом)
+    futures_virtual_balance: float = 100.0  # $100 стартовый капитал
+    futures_leverage: int = 3  # Плечо 3x (SAFE MODE - снижено с 5x)
+    futures_risk_per_trade: float = 0.05  # 5% от баланса в маржу (SAFE MODE - снижено с 12%)
     futures_margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'  # Изолированная маржа
     
     # Legacy (для совместимости)
@@ -80,20 +80,20 @@ class Settings(BaseSettings):
     funding_rate_max_pct: float = 0.05  # Макс. ставка 0.05% для входа
     funding_time_window_minutes: int = 60  # Окно до выплаты (минуты)
     
-    # ========== POSITION LIMITS - SMART GROWTH $100 ==========
-    futures_max_open_positions: int = 5  # Макс. 5 позиций (5 × $12 = $60 маржи, $40 буфер)
-    futures_max_positions_per_symbol: int = 1  # Макс. 1 позиция на символ (диверсификация!)
+    # ========== POSITION LIMITS - SAFE MODE (SNIPER) ==========
+    futures_max_open_positions: int = 1  # Макс. 1 позиция (SAFE MODE)
+    futures_max_positions_per_symbol: int = 1  # Макс. 1 позиция на символ
     futures_max_orders_per_symbol: int = 15  # Макс. ордеров на один символ
     futures_max_total_orders: int = 80  # Макс. всего ордеров
-    futures_min_confidence: float = 0.60  # Мин. confidence 60% для LONG
-    futures_min_confidence_short: float = 0.60  # Мин. confidence 60% для SHORT (равно LONG)
+    futures_min_confidence: float = 0.65  # Мин. confidence 65% для LONG (SAFE MODE)
+    futures_min_confidence_short: float = 0.65  # Мин. confidence 65% для SHORT (SAFE MODE)
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
     
     # ========== SIMULATED REALISM - SMART GROWTH $100 ==========
     # Реалистичный учёт комиссий для подготовки к Real Trading
     estimated_fee_rate: float = 0.0006  # 0.06% Taker fee (Bybit standard)
-    min_profit_threshold_multiplier: float = 2.0  # Минимальный профит = 2x комиссия
-    min_profit_threshold_pct: float = 0.6  # Минимальный TP 0.6% (комиссия + проскальзывание + микро-профит)
+    min_profit_threshold_multiplier: float = 1.5  # Минимальный профит = 1.5x комиссия (снижено с 2.0)
+    min_profit_threshold_pct: float = 0.4  # Минимальный TP 0.4% (снижено с 0.6%)
     simulate_fees_in_demo: bool = True  # Учитывать комиссии в Demo режиме
     
     # ========== LIMIT ORDER SETTINGS (Maker Strategy) ==========
@@ -109,14 +109,14 @@ class Settings(BaseSettings):
     mean_reversion_enabled: bool = True  # Включить Mean Reversion во флэте
     
     # CHOP пороги с гистерезисом (избегаем частых переключений)
-    chop_flat_threshold: float = 62.0  # CHOP >= 62 = переход в FLAT
-    chop_trend_threshold: float = 58.0  # CHOP <= 58 = переход в TREND
-    # Зона 58-62 = сохраняем текущий режим (гистерезис)
+    chop_flat_threshold: float = 65.0  # CHOP >= 65 = переход в FLAT (повышено с 62)
+    chop_trend_threshold: float = 60.0  # CHOP <= 60 = переход в TREND (повышено с 58)
+    # Зона 60-65 = сохраняем текущий режим (гистерезис)
     
     # Mean Reversion параметры (для флэта)
     rsi_oversold: int = 30  # RSI < 30 = перепродан (BUY signal)
     rsi_overbought: int = 70  # RSI > 70 = перекуплен (SELL signal)
-    mean_reversion_min_confidence: float = 0.65  # Минимальная уверенность для Mean Reversion
+    mean_reversion_min_confidence: float = 0.70  # Минимальная уверенность для Mean Reversion (SAFE MODE)
     mean_reversion_btc_safety: bool = True  # Проверять BTC тренд даже во флэте
     
     # ========== TRADING HOURS FILTER ==========
@@ -165,8 +165,8 @@ class Settings(BaseSettings):
     trading_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
     
     # Futures-specific pairs (linear USDT perpetuals)
-    # Добавлены BNB и XRP для большей активности
-    futures_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+    # SAFE MODE: только SOLUSDT (волатильный и дешевый)
+    futures_pairs: list = ["SOLUSDT"]
 
 
 settings = Settings()

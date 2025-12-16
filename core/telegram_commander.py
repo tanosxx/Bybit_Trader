@@ -1,5 +1,5 @@
 """
-Telegram Commander v1.0 - Интерактивный командир бота
+Telegram Commander v2.0 - Интерактивный командир бота с визуальными отчётами
 
 ФИЛОСОФИЯ "SILENT MODE":
 - Бот МОЛЧИТ по умолчанию
@@ -10,12 +10,21 @@ Telegram Commander v1.0 - Интерактивный командир бота
 - /status - Сводка "одним взглядом"
 - /brain - Что думает система
 - /panic - Emergency Stop (закрыть всё и остановить)
-- /balance - Детальный баланс
+- /balance - График эквити (визуальный)
+- /orders - Таблица PnL (визуальная)
 """
 import asyncio
 import os
 from typing import Optional
 from datetime import datetime
+import io
+
+# Matplotlib для графиков (без GUI)
+import matplotlib
+matplotlib.use('Agg')  # Без GUI для Docker
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.patches import Rectangle
 
 from telegram import Update
 from telegram.ext import (
@@ -440,152 +449,253 @@ class TelegramCommander:
             await update.message.reply_text(f"❌ Panic error: {e}")
     
     async def cmd_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Последние ордера (открытые + недавно закрытые)"""
+        """📊 Таблица PnL последних сделок (визуальный отчёт)"""
         if not self._is_admin(update):
             return
         
         try:
+            await update.message.reply_text("📊 Generating PnL table...")
+            
+            # Получаем данные из БД
             from database.db import async_session
             from database.models import Trade, TradeStatus
             from sqlalchemy import select, desc
             
             async with async_session() as session:
-                # Открытые позиции
-                open_result = await session.execute(
-                    select(Trade).where(
-                        Trade.status == TradeStatus.OPEN,
-                        Trade.market_type == 'futures'
-                    ).order_by(desc(Trade.entry_time))
-                )
-                open_trades = list(open_result.scalars().all())
-                
-                # Последние 10 закрытых
-                closed_result = await session.execute(
+                # Последние 15 закрытых сделок
+                result = await session.execute(
                     select(Trade).where(
                         Trade.status == TradeStatus.CLOSED,
                         Trade.market_type == 'futures'
-                    ).order_by(desc(Trade.exit_time)).limit(10)
+                    ).order_by(desc(Trade.exit_time)).limit(15)
                 )
-                closed_trades = list(closed_result.scalars().all())
+                trades = list(result.scalars().all())
                 
-                message = "📊 <b>ORDERS</b>\n\n"
+                if not trades:
+                    await update.message.reply_text("📊 No closed trades yet")
+                    return
                 
-                # Открытые позиции
-                if open_trades:
-                    message += f"<b>🟢 OPEN ({len(open_trades)}):</b>\n"
-                    for trade in open_trades:
-                        side_emoji = "🚀" if trade.side.value == "BUY" else "🐻"
-                        entry_time = trade.entry_time.strftime("%H:%M")
-                        
-                        # Рассчитываем текущий unrealized PnL (примерно)
-                        # Для точности нужна текущая цена, но для простоты показываем entry
-                        message += (
-                            f"{side_emoji} <b>{trade.symbol}</b> {trade.side.value}\n"
-                            f"   Entry: ${trade.entry_price:.2f} | Qty: {trade.quantity}\n"
-                            f"   Time: {entry_time} UTC\n\n"
-                        )
-                else:
-                    message += "<b>🟢 OPEN:</b> None\n\n"
+                # Подготовка данных для таблицы
+                table_data = []
+                total_pnl = 0
                 
-                # Закрытые позиции
-                if closed_trades:
-                    message += f"<b>📜 RECENT CLOSED (last 10):</b>\n"
-                    for trade in closed_trades[:10]:
-                        # Определяем результат
-                        net_pnl = trade.pnl - (trade.fee_entry + trade.fee_exit)
-                        result_emoji = "💰" if net_pnl >= 0 else "🩸"
-                        side_emoji = "🚀" if trade.side.value == "BUY" else "🐻"
-                        
-                        # Время
-                        exit_time = trade.exit_time.strftime("%H:%M") if trade.exit_time else "?"
-                        
-                        # Длительность
-                        if trade.entry_time and trade.exit_time:
-                            duration = (trade.exit_time - trade.entry_time).total_seconds() / 60
-                            if duration > 60:
-                                duration_str = f"{int(duration // 60)}h{int(duration % 60)}m"
-                            else:
-                                duration_str = f"{int(duration)}m"
-                        else:
-                            duration_str = "?"
-                        
-                        message += (
-                            f"{result_emoji} <b>{trade.symbol}</b> {trade.side.value}\n"
-                            f"   PnL: ${net_pnl:+.2f} | Exit: ${trade.exit_price:.2f}\n"
-                            f"   Time: {exit_time} | Duration: {duration_str}\n\n"
-                        )
-                else:
-                    message += "<b>📜 RECENT CLOSED:</b> None\n"
+                for trade in reversed(trades):  # Показываем от старых к новым
+                    net_pnl = trade.pnl - (trade.fee_entry + trade.fee_exit)
+                    total_pnl += net_pnl
+                    
+                    time_str = trade.exit_time.strftime("%H:%M") if trade.exit_time else "?"
+                    pair = trade.symbol.replace('USDT', '')
+                    side = "L" if trade.side.value == "BUY" else "S"
+                    status = "✓" if net_pnl >= 0 else "✗"
+                    
+                    table_data.append([time_str, pair, side, f"${net_pnl:+.2f}", status])
                 
-                # Обрезаем если слишком длинное
-                if len(message) > 4000:
-                    message = message[:4000] + "\n\n... (truncated)"
-            
-            await update.message.reply_text(message, parse_mode='HTML')
+                # Создаём таблицу
+                fig, ax = plt.subplots(figsize=(10, 8), facecolor='#1e1e1e')
+                ax.axis('off')
+                
+                # Заголовки
+                headers = ['Time', 'Pair', 'Side', 'PnL ($)', 'Status']
+                
+                # Создаём таблицу
+                table = ax.table(
+                    cellText=table_data,
+                    colLabels=headers,
+                    cellLoc='center',
+                    loc='center',
+                    colWidths=[0.15, 0.15, 0.12, 0.20, 0.12]
+                )
+                
+                # Стилизация таблицы
+                table.auto_set_font_size(False)
+                table.set_fontsize(10)
+                table.scale(1, 2)
+                
+                # Стилизация заголовков
+                for i in range(len(headers)):
+                    cell = table[(0, i)]
+                    cell.set_facecolor('#3d3d3d')
+                    cell.set_text_props(weight='bold', color='white')
+                    cell.set_edgecolor('white')
+                
+                # Стилизация строк с раскраской по PnL
+                for i, row in enumerate(table_data, start=1):
+                    net_pnl_value = float(row[3].replace('$', '').replace('+', ''))
+                    
+                    # Определяем цвет фона
+                    if net_pnl_value > 0:
+                        bg_color = '#1a3d1a'  # Тёмно-зелёный
+                    else:
+                        bg_color = '#3d1a1a'  # Тёмно-красный
+                    
+                    for j in range(len(headers)):
+                        cell = table[(i, j)]
+                        cell.set_facecolor(bg_color)
+                        cell.set_text_props(color='white')
+                        cell.set_edgecolor('#555555')
+                
+                # Заголовок
+                title_color = '#00ff00' if total_pnl >= 0 else '#ff4444'
+                plt.title(
+                    f'📊 Last 15 Trades | Total PnL: ${total_pnl:+.2f}',
+                    color=title_color,
+                    fontsize=14,
+                    fontweight='bold',
+                    pad=20
+                )
+                
+                # Подпись внизу
+                fig.text(
+                    0.5, 0.02,
+                    f'Trades: {len(trades)} | Wins: {sum(1 for t in trades if (t.pnl - t.fee_entry - t.fee_exit) > 0)} | Losses: {sum(1 for t in trades if (t.pnl - t.fee_entry - t.fee_exit) <= 0)}',
+                    ha='center',
+                    color='white',
+                    fontsize=10
+                )
+                
+                plt.tight_layout()
+                
+                # Сохраняем в буфер
+                buf = io.BytesIO()
+                plt.savefig(buf, format='png', dpi=150, facecolor='#1e1e1e')
+                buf.seek(0)
+                plt.close()
+                
+                # Отправляем фото
+                win_rate = sum(1 for t in trades if (t.pnl - t.fee_entry - t.fee_exit) > 0) / len(trades) * 100
+                caption = (
+                    f"📊 <b>Recent Trades</b>\n"
+                    f"Total PnL: <b>${total_pnl:+.2f}</b>\n"
+                    f"Win Rate: <b>{win_rate:.1f}%</b>\n"
+                    f"Trades: {len(trades)}"
+                )
+                
+                await update.message.reply_photo(
+                    photo=buf,
+                    caption=caption,
+                    parse_mode='HTML'
+                )
             
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
+            await update.message.reply_text(f"❌ Error generating table: {e}")
     
     async def cmd_balance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Детальный баланс"""
+        """📈 График эквити (визуальный отчёт)"""
         if not self._is_admin(update):
             return
         
         try:
-            # Получаем РЕАЛЬНЫЙ баланс из БД
+            await update.message.reply_text("📊 Generating equity curve...")
+            
+            # Получаем данные из БД
             from database.db import async_session
             from database.models import Trade, TradeStatus
-            from sqlalchemy import select, func
+            from sqlalchemy import select
             
             async with async_session() as session:
                 # Стартовый баланс
-                initial = 100.0
-                leverage = 5  # Из конфига
+                initial_balance = 100.0
                 
-                # Считаем PnL из закрытых сделок
+                # Получаем все закрытые сделки, отсортированные по времени
                 result = await session.execute(
-                    select(
-                        func.sum(Trade.pnl).label('total_pnl'),
-                        func.sum(Trade.fee_entry + Trade.fee_exit).label('total_fees'),
-                        func.count(Trade.id).label('total_trades')
-                    ).where(
+                    select(Trade).where(
                         Trade.status == TradeStatus.CLOSED,
                         Trade.market_type == 'futures'
-                    )
+                    ).order_by(Trade.exit_time)
                 )
-                row = result.first()
-                total_pnl = float(row.total_pnl or 0)
-                total_fees = float(row.total_fees or 0)
-                total_trades = int(row.total_trades or 0)
+                trades = list(result.scalars().all())
                 
-                # Текущий баланс
-                current = initial + total_pnl - total_fees
-                realized_pnl = current - initial
-                pnl_pct = (realized_pnl / initial * 100) if initial > 0 else 0
+                if not trades:
+                    await update.message.reply_text("📊 No closed trades yet")
+                    return
                 
-                # Buying power
-                buying_power = current * leverage
+                # Строим кумулятивную линию баланса
+                timestamps = []
+                balances = []
+                current_balance = initial_balance
                 
-                message = (
-                    f"💰 <b>BALANCE DETAILS</b>\n\n"
-                    f"<b>Virtual Balance:</b>\n"
-                    f"   Initial: ${initial:.2f}\n"
-                    f"   Current: ${current:.2f}\n"
-                    f"   Realized PnL: ${realized_pnl:+.2f}\n"
-                    f"   ROI: {pnl_pct:+.1f}%\n\n"
-                    f"<b>Trading:</b>\n"
-                    f"   Total Trades: {total_trades}\n"
-                    f"   Gross PnL: ${total_pnl:+.2f}\n"
-                    f"   Total Fees: ${total_fees:.2f}\n\n"
-                    f"<b>Leverage:</b> {leverage}x\n"
-                    f"<b>Buying Power:</b> ${buying_power:.2f}\n\n"
-                    f"⚠️ Demo Trading Mode"
+                # Добавляем стартовую точку
+                if trades:
+                    timestamps.append(trades[0].entry_time)
+                    balances.append(initial_balance)
+                
+                # Добавляем точки после каждой сделки
+                for trade in trades:
+                    net_pnl = trade.pnl - (trade.fee_entry + trade.fee_exit)
+                    current_balance += net_pnl
+                    timestamps.append(trade.exit_time)
+                    balances.append(current_balance)
+                
+                # Создаём график
+                fig, ax = plt.subplots(figsize=(12, 6), facecolor='#1e1e1e')
+                ax.set_facecolor('#2d2d2d')
+                
+                # Определяем цвет линии
+                final_pnl = current_balance - initial_balance
+                line_color = '#00ff00' if final_pnl >= 0 else '#ff4444'
+                
+                # Рисуем линию эквити
+                ax.plot(timestamps, balances, color=line_color, linewidth=2.5, label='Balance')
+                
+                # Горизонтальная линия стартового баланса
+                ax.axhline(y=initial_balance, color='#888888', linestyle='--', 
+                          linewidth=1, alpha=0.5, label=f'Initial: ${initial_balance:.2f}')
+                
+                # Заливка области прибыли/убытка
+                ax.fill_between(timestamps, balances, initial_balance, 
+                               where=[b >= initial_balance for b in balances],
+                               color='#00ff00', alpha=0.1)
+                ax.fill_between(timestamps, balances, initial_balance,
+                               where=[b < initial_balance for b in balances],
+                               color='#ff4444', alpha=0.1)
+                
+                # Настройка осей
+                ax.set_xlabel('Time', color='white', fontsize=12)
+                ax.set_ylabel('Balance ($)', color='white', fontsize=12)
+                ax.set_title(f'📈 Equity Curve | Current: ${current_balance:.2f} ({final_pnl:+.2f})', 
+                            color='white', fontsize=14, fontweight='bold')
+                
+                # Форматирование времени на оси X
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+                plt.xticks(rotation=45, ha='right', color='white')
+                plt.yticks(color='white')
+                
+                # Сетка
+                ax.grid(True, alpha=0.2, color='white')
+                
+                # Легенда
+                ax.legend(loc='upper left', facecolor='#2d2d2d', edgecolor='white', 
+                         labelcolor='white')
+                
+                # Убираем рамки
+                for spine in ax.spines.values():
+                    spine.set_color('white')
+                    spine.set_linewidth(0.5)
+                
+                plt.tight_layout()
+                
+                # Сохраняем в буфер
+                buf = io.BytesIO()
+                plt.savefig(buf, format='png', dpi=150, facecolor='#1e1e1e')
+                buf.seek(0)
+                plt.close()
+                
+                # Отправляем фото
+                caption = (
+                    f"📈 <b>Balance History</b>\n"
+                    f"Current: <b>${current_balance:.2f}</b>\n"
+                    f"PnL: <b>${final_pnl:+.2f}</b> ({(final_pnl/initial_balance*100):+.1f}%)\n"
+                    f"Trades: {len(trades)}"
                 )
-            
-            await update.message.reply_text(message, parse_mode='HTML')
+                
+                await update.message.reply_photo(
+                    photo=buf,
+                    caption=caption,
+                    parse_mode='HTML'
+                )
             
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
+            await update.message.reply_text(f"❌ Error generating chart: {e}")
     
     # ========== EMERGENCY NOTIFICATIONS ==========
     
