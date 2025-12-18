@@ -80,13 +80,13 @@ class Settings(BaseSettings):
     funding_rate_max_pct: float = 0.05  # Макс. ставка 0.05% для входа
     funding_time_window_minutes: int = 60  # Окно до выплаты (минуты)
     
-    # ========== POSITION LIMITS - SAFE MODE (SNIPER) ==========
+    # ========== POSITION LIMITS - BALANCED MODE (ACTIVE TRADING) ==========
     futures_max_open_positions: int = 1  # Макс. 1 позиция (SAFE MODE)
     futures_max_positions_per_symbol: int = 1  # Макс. 1 позиция на символ
     futures_max_orders_per_symbol: int = 15  # Макс. ордеров на один символ
     futures_max_total_orders: int = 80  # Макс. всего ордеров
-    futures_min_confidence: float = 0.65  # Мин. confidence 65% для LONG (SAFE MODE)
-    futures_min_confidence_short: float = 0.65  # Мин. confidence 65% для SHORT (SAFE MODE)
+    futures_min_confidence: float = 0.60  # Мин. confidence 60% для LONG (BALANCED - снижено с 65%)
+    futures_min_confidence_short: float = 0.60  # Мин. confidence 60% для SHORT (BALANCED - снижено с 65%)
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
     
     # ========== SIMULATED REALISM - SMART GROWTH $100 ==========
@@ -109,9 +109,9 @@ class Settings(BaseSettings):
     mean_reversion_enabled: bool = True  # Включить Mean Reversion во флэте
     
     # CHOP пороги с гистерезисом (избегаем частых переключений)
-    chop_flat_threshold: float = 65.0  # CHOP >= 65 = переход в FLAT (повышено с 62)
-    chop_trend_threshold: float = 60.0  # CHOP <= 60 = переход в TREND (повышено с 58)
-    # Зона 60-65 = сохраняем текущий режим (гистерезис)
+    chop_flat_threshold: float = 62.0  # CHOP >= 62 = переход в FLAT (снижено с 65 для активной торговли)
+    chop_trend_threshold: float = 55.0  # CHOP <= 55 = переход в TREND (снижено с 60 для раннего распознавания)
+    # Зона 55-62 = сохраняем текущий режим (гистерезис)
     
     # Mean Reversion параметры (для флэта)
     rsi_oversold: int = 30  # RSI < 30 = перепродан (BUY signal)

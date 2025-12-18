@@ -29,7 +29,7 @@ except ImportError:
 REGIME_BULL_RUSH = "BULL_RUSH"      # Агрессивный рост -> только LONG
 REGIME_BEAR_CRASH = "BEAR_CRASH"    # Агрессивное падение -> только SHORT
 REGIME_SIDEWAYS = "SIDEWAYS"        # Боковик -> LONG и SHORT разрешены
-REGIME_UNCERTAIN = "UNCERTAIN"      # Высокая волатильность -> НЕ торговать
+REGIME_UNCERTAIN = "UNCERTAIN"      # Высокая волатильность -> торговля разрешена с осторожностью
 
 VALID_REGIMES = [REGIME_BULL_RUSH, REGIME_BEAR_CRASH, REGIME_SIDEWAYS, REGIME_UNCERTAIN]
 
@@ -498,9 +498,10 @@ Trading Strategy:
                 return False
         
         elif regime == REGIME_UNCERTAIN:
-            # НЕ торговать вообще
-            print(f"🚫 Strategic Veto: ALL signals blocked (Regime: {regime})")
-            return False
+            # СМЯГЧЕНО: Разрешаем торговлю, но с повышенной осторожностью
+            # Multi-Agent система сама отфильтрует слабые сигналы
+            print(f"⚠️  Strategic Warning: UNCERTAIN regime - trade with caution")
+            return True  # Было: return False
         
         # SIDEWAYS или любой другой режим -> разрешаем всё
         return True

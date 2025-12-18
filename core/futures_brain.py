@@ -54,30 +54,30 @@ class FuturesBrain:
     """
     
     def __init__(self):
-        # Конфигурация агентов для фьючерсов (TRADING v5.0 - АКТИВНАЯ ТОРГОВЛЯ)
+        # Конфигурация агентов для фьючерсов (TRADING v6.1 - BALANCED MODE)
         self.agents = {
             'conservative': {
                 'weight': 3,
-                'min_confidence': 70,  # SAFE MODE: только отличные сигналы
+                'min_confidence': 75,  # Только отличные сигналы (повышено с 70%)
                 'require_ta': True,
-                'max_risk': 5
+                'max_risk': 7  # Повышено с 5 (было слишком строго)
             },
             'balanced': {
                 'weight': 2,
-                'min_confidence': 60,  # SAFE MODE: хорошие сигналы
-                'require_ta': True,  # ТРЕБУЕМ TA подтверждение
-                'max_risk': 6
+                'min_confidence': 60,  # Хорошие сигналы (без изменений)
+                'require_ta': False,  # УБРАЛИ требование TA (было True)
+                'max_risk': 8  # Повышено с 6 (было слишком строго)
             },
             'aggressive': {
                 'weight': 1,
-                'min_confidence': 50,  # SAFE MODE: минимум средние сигналы
+                'min_confidence': 55,  # Средние сигналы (повышено с 50%)
                 'require_ta': False,
-                'max_risk': 7
+                'max_risk': 9  # Повышено с 7 (было слишком строго)
             }
         }
         
-        # Порог для входа - ПОВЫШЕН до 3 (нужен консенсус)
-        self.min_score_to_trade = 3  # conservative (3) ИЛИ balanced (2) + aggressive (1)
+        # Порог для входа - СНИЖЕН до 2 (активная торговля)
+        self.min_score_to_trade = 2  # balanced (2) ИЛИ aggressive (1) + conservative (1)
         
         # Лимит потерь на сделку (% от депозита)
         self.max_loss_per_trade_pct = 2.0
@@ -197,6 +197,7 @@ class FuturesBrain:
         
         for agent_name, config in self.agents.items():
             vote = False
+            reason = ""
             
             # Проверяем confidence
             if trading_conf >= config['min_confidence']:
@@ -205,10 +206,20 @@ class FuturesBrain:
                     # Проверяем TA если требуется
                     if config['require_ta']:
                         vote = ta_confirmed
+                        reason = f"TA: {ta_confirmed}"
                     else:
                         vote = True
+                        reason = "OK"
+                else:
+                    reason = f"Risk {risk_score} > {config['max_risk']}"
+            else:
+                reason = f"Conf {trading_conf:.0f}% < {config['min_confidence']}%"
             
             votes[agent_name] = vote
+            
+            # Debug logging
+            if not vote:
+                print(f"      {agent_name.upper()}: ❌ ({reason})")
         
         return votes
     
@@ -331,7 +342,7 @@ class FuturesBrain:
                 total_score=total_score,
                 leverage=leverage,
                 position_size_pct=position_size,
-                reasoning=f"Score {total_score} >= 3 | Conf {trading_conf:.0f}% | {action}",
+                reasoning=f"Score {total_score} >= 2 | Conf {trading_conf:.0f}% | {action}",
                 agents_voted=votes
             )
         else:
@@ -343,7 +354,7 @@ class FuturesBrain:
                 total_score=total_score,
                 leverage=2,
                 position_size_pct=0,
-                reasoning=f"Score {total_score} < 3 (need 3+)",
+                reasoning=f"Score {total_score} < 2 (need 2+)",
                 agents_voted=votes
             )
     
