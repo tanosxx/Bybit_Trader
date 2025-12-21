@@ -1,7 +1,13 @@
 """
-FUTURES Executor v7.0 - БЕЗОПАСНЫЙ исполнитель для фьючерсной торговли
+FUTURES Executor v7.1 - АДАПТИВНЫЙ исполнитель для фьючерсной торговли
 
-НОВЫЕ ФИЧИ v7.0 (Maker Strategy):
+НОВЫЕ ФИЧИ v7.1 (Adaptive Scalper):
+1. ADAPTIVE TP/SL - сжатие целей во флэте (TP×0.5, SL×0.7)
+2. ADAPTIVE TTL - сокращение времени жизни во флэте (180→90 минут)
+3. Market Regime Detection - автоматическое определение FLAT/TREND по CHOP
+4. Scalping Mode - быстрые сделки во флэте вместо долгого ожидания
+
+ФИЧИ v7.0 (Maker Strategy):
 1. LIMIT Orders - умное ценообразование по Best Bid/Ask (Maker fee 0.02%)
 2. Order Timeout - автоматическая отмена зависших ордеров (60s)
 3. Zombie Cleanup - очистка старых ордеров перед новым сигналом
@@ -67,9 +73,13 @@ class FuturesExecutor(BaseExecutor):
         self.leverage = settings.futures_leverage  # Базовое, будет меняться динамически
         self.risk_per_trade = settings.futures_risk_per_trade  # Из конфига!
         
-        # SL/TP проценты
-        self.sl_pct = 2.0  # 2% стоп-лосс
-        self.tp_pct = 3.0  # 3% тейк-профит
+        # SL/TP проценты (базовые - для TREND режима)
+        self.base_sl_pct = 2.0  # 2% стоп-лосс (базовый)
+        self.base_tp_pct = 3.0  # 3% тейк-профит (базовый)
+        
+        # Текущие (адаптивные) значения
+        self.sl_pct = self.base_sl_pct
+        self.tp_pct = self.base_tp_pct
         
         # ========== TRAILING STOP v4.0 ==========
         self.trailing_enabled = settings.trailing_stop_enabled
@@ -90,11 +100,12 @@ class FuturesExecutor(BaseExecutor):
         # Текущие позиции
         self._current_positions: Dict[str, str] = {}
         
-        print(f"🚀 FuturesExecutor v7.0 initialized (MAKER STRATEGY):")
+        print(f"🚀 FuturesExecutor v7.1 initialized (ADAPTIVE SCALPER):")
         print(f"   💰 Virtual Balance: ${self.virtual_balance}")
         print(f"   📊 Base Leverage: {self.leverage}x (dynamic 2-7x)")
         print(f"   🎯 Risk per Trade: {self.risk_per_trade*100}%")
-        print(f"   🛡️ SL: {self.sl_pct}% | TP: {self.tp_pct}%")
+        print(f"   🛡️ Base SL: {self.base_sl_pct}% | Base TP: {self.base_tp_pct}%")
+        print(f"   🔄 ADAPTIVE MODE: FLAT → TP×0.5, SL×0.7, TTL÷2")
         print(f"   📈 Trailing Stop: {'ON' if self.trailing_enabled else 'OFF'}")
         print(f"   💸 Funding Filter: {'ON' if self.funding_filter_enabled else 'OFF'}")
         print(f"   🚫 Max Symbols: {self.max_open_positions}")
@@ -105,6 +116,73 @@ class FuturesExecutor(BaseExecutor):
         print(f"   💎 Order Type: {settings.order_type} (Maker: {settings.maker_fee_rate*100}%, Taker: {settings.taker_fee_rate*100}%)")
         print(f"   ⏰ Limit Timeout: {settings.order_timeout_seconds}s")
         print(f"   🔄 Fallback to Market: {'ON' if settings.limit_order_fallback_to_market else 'OFF'}")
+    
+    # ========== 0. POSITION LIMIT CHECK (v5.1) ==========
+    
+    def adapt_to_market_regime(self, chop: float, market_mode: str = None) -> Dict[str, float]:
+        """
+        Адаптировать TP/SL/TTL к режиму рынка
+        
+        FLAT режим (CHOP > 50 или market_mode == 'FLAT'):
+        - TP сжимается на 50% (3% → 1.5%)
+        - SL сжимается на 30% (2% → 1.4%)
+        - TTL сокращается вдвое (180 → 90 минут)
+        
+        TREND режим:
+        - Базовые значения (TP 3%, SL 2%, TTL 180 мин)
+        
+        Args:
+            chop: Choppiness Index (0-100)
+            market_mode: 'FLAT' или 'TREND' (опционально)
+        
+        Returns:
+            {
+                'tp_pct': float,
+                'sl_pct': float,
+                'ttl_minutes': int,
+                'mode': str
+            }
+        """
+        # Определяем режим
+        is_flat = False
+        
+        if market_mode:
+            is_flat = (market_mode == 'FLAT')
+        elif chop is not None:
+            # CHOP > 50 = флэт (вялый рынок)
+            is_flat = (chop > 50.0)
+        
+        if is_flat:
+            # FLAT: Скальпинг (быстрые сделки)
+            tp_pct = self.base_tp_pct * 0.5  # 3% → 1.5%
+            sl_pct = self.base_sl_pct * 0.7  # 2% → 1.4%
+            ttl_minutes = settings.max_hold_time_minutes // 2  # 180 → 90 минут
+            mode = 'FLAT'
+            
+            print(f"   🔄 ADAPTIVE MODE: FLAT detected (CHOP: {chop:.1f if chop else 'N/A'})")
+            print(f"      TP: {self.base_tp_pct}% → {tp_pct}% (×0.5)")
+            print(f"      SL: {self.base_sl_pct}% → {sl_pct}% (×0.7)")
+            print(f"      TTL: {settings.max_hold_time_minutes}m → {ttl_minutes}m (÷2)")
+        else:
+            # TREND: Базовые значения
+            tp_pct = self.base_tp_pct  # 3%
+            sl_pct = self.base_sl_pct  # 2%
+            ttl_minutes = settings.max_hold_time_minutes  # 180 минут
+            mode = 'TREND'
+            
+            print(f"   📈 ADAPTIVE MODE: TREND (CHOP: {chop:.1f if chop else 'N/A'})")
+            print(f"      TP: {tp_pct}%, SL: {sl_pct}%, TTL: {ttl_minutes}m")
+        
+        # Обновляем текущие значения
+        self.sl_pct = sl_pct
+        self.tp_pct = tp_pct
+        
+        return {
+            'tp_pct': tp_pct,
+            'sl_pct': sl_pct,
+            'ttl_minutes': ttl_minutes,
+            'mode': mode
+        }
     
     # ========== 0. POSITION LIMIT CHECK (v5.1) ==========
     
@@ -904,15 +982,23 @@ class FuturesExecutor(BaseExecutor):
         Открыть LONG с полной защитой
         
         0. CHECK POSITION LIMIT (v5.1)
+        0.5. ADAPT TO MARKET REGIME (v7.1 - NEW!)
         1. CHECK FUNDING RATE (v4.0)
         2. Setup margin + leverage
         3. Get instrument info
         4. Calculate qty
-        5. Calculate SL/TP
+        5. Calculate SL/TP (ADAPTIVE!)
         6. Place ATOMIC order
         7. SET TRAILING STOP (v4.0)
         """
         print(f"\n🟢 [FUTURES] Opening LONG {symbol} @ ${price:.2f}")
+        
+        # 0.5. ADAPT TO MARKET REGIME (v7.1)
+        chop = signal.extra_data.get('chop') if signal.extra_data else None
+        market_mode = signal.extra_data.get('market_mode') if signal.extra_data else None
+        
+        adaptive_params = self.adapt_to_market_regime(chop, market_mode)
+        ttl_minutes = adaptive_params['ttl_minutes']
         
         # 0. CHECK POSITION LIMITS (v7.1)
         # Проверка 1: Уникальные символы
@@ -1030,7 +1116,12 @@ class FuturesExecutor(BaseExecutor):
             stop_loss=float(sl_str),
             take_profit=float(tp_str),
             order_type=order.get('order_type', 'MARKET'),
-            limit_price=order.get('limit_price')
+            limit_price=order.get('limit_price'),
+            extra_data={
+                'ttl_minutes': ttl_minutes,  # Адаптивный TTL
+                'market_mode': adaptive_params['mode'],
+                'chop': chop
+            }
         )
         
         self._current_positions[symbol] = 'LONG'
@@ -1083,15 +1174,24 @@ class FuturesExecutor(BaseExecutor):
         """
         Открыть SHORT с полной защитой
         
+        0. CHECK POSITION LIMIT (v7.1)
+        0.5. ADAPT TO MARKET REGIME (v7.1 - NEW!)
         1. CHECK FUNDING RATE (v4.0)
         2. Setup margin + leverage
         3. Get instrument info
         4. Calculate qty
-        5. Calculate SL/TP
+        5. Calculate SL/TP (ADAPTIVE!)
         6. Place ATOMIC order
         7. SET TRAILING STOP (v4.0)
         """
         print(f"\n🔴 [FUTURES] Opening SHORT {symbol} @ ${price:.2f}")
+        
+        # 0.5. ADAPT TO MARKET REGIME (v7.1)
+        chop = signal.extra_data.get('chop') if signal.extra_data else None
+        market_mode = signal.extra_data.get('market_mode') if signal.extra_data else None
+        
+        adaptive_params = self.adapt_to_market_regime(chop, market_mode)
+        ttl_minutes = adaptive_params['ttl_minutes']
         
         # 0. CHECK POSITION LIMITS (v7.1)
         # Проверка 1: Уникальные символы
@@ -1208,7 +1308,12 @@ class FuturesExecutor(BaseExecutor):
             stop_loss=float(sl_str),
             take_profit=float(tp_str),
             order_type=order.get('order_type', 'MARKET'),
-            limit_price=order.get('limit_price')
+            limit_price=order.get('limit_price'),
+            extra_data={
+                'ttl_minutes': ttl_minutes,  # Адаптивный TTL
+                'market_mode': adaptive_params['mode'],
+                'chop': chop
+            }
         )
         
         self._current_positions[symbol] = 'SHORT'
@@ -1519,24 +1624,31 @@ class FuturesExecutor(BaseExecutor):
                         print(f"   🚨 EMERGENCY: {symbol} SHORT up {loss_pct:.2f}% (limit: {settings.hard_stop_loss_percent*100}%)")
                         continue
                 
-                # ========== CHECK 2: TIME TO LIVE (TTL) ==========
+                # ========== CHECK 2: TIME TO LIVE (TTL) - ADAPTIVE! ==========
                 if entry_time:
                     hold_time_minutes = (now - entry_time).total_seconds() / 60
                     
-                    # DEBUG LOG для диагностики
-                    print(f"   🧟 Zombie Check: {symbol} Open={entry_time.strftime('%H:%M:%S UTC')}, Now={now.strftime('%H:%M:%S UTC')}, Duration={hold_time_minutes:.1f}m / Limit={settings.max_hold_time_minutes}m")
+                    # Получаем адаптивный TTL из extra_data (если есть)
+                    ttl_limit = settings.max_hold_time_minutes  # Базовый (180 минут)
                     
-                    if hold_time_minutes > settings.max_hold_time_minutes:
+                    if trade.extra_data and 'ttl_minutes' in trade.extra_data:
+                        ttl_limit = trade.extra_data['ttl_minutes']  # Адаптивный (90 или 180)
+                        market_mode = trade.extra_data.get('market_mode', 'UNKNOWN')
+                        print(f"   🧟 Zombie Check ({market_mode}): {symbol} Duration={hold_time_minutes:.1f}m / Adaptive Limit={ttl_limit}m")
+                    else:
+                        print(f"   🧟 Zombie Check: {symbol} Duration={hold_time_minutes:.1f}m / Base Limit={ttl_limit}m")
+                    
+                    if hold_time_minutes > ttl_limit:
                         positions_to_close.append({
                             'trade': trade,
                             'symbol': symbol,
-                            'reason': f'⏰ ZOMBIE TRADE (TTL EXPIRED): {hold_time_minutes:.0f} min > {settings.max_hold_time_minutes} min',
+                            'reason': f'⏰ ZOMBIE TRADE (TTL EXPIRED): {hold_time_minutes:.0f} min > {ttl_limit} min',
                             'current_price': current_price,
                             'entry_price': entry_price,
                             'position_side': position_side,
                             'trigger': 'TTL_EXPIRED'
                         })
-                        print(f"   ⏰ ZOMBIE TRADE DETECTED: {symbol} held for {hold_time_minutes:.0f} min (limit: {settings.max_hold_time_minutes} min)")
+                        print(f"   ⏰ ZOMBIE TRADE DETECTED: {symbol} held for {hold_time_minutes:.0f} min (limit: {ttl_limit} min)")
                         continue
             
             if positions_to_close:

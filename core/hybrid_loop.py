@@ -265,6 +265,24 @@ class HybridTradingLoop:
                 # Извлекаем ml_features из AI решения (если есть)
                 ml_features = ai.get('ml_features') if isinstance(ai, dict) else None
                 
+                # Извлекаем CHOP и market_mode из gatekeeper (если есть)
+                gatekeeper = ai.get('gatekeeper', {}) if isinstance(ai, dict) else {}
+                chop = gatekeeper.get('chop')
+                
+                # Определяем market_mode по CHOP
+                market_mode = None
+                if chop is not None:
+                    market_mode = 'FLAT' if chop > 50.0 else 'TREND'
+                
+                # Собираем extra_data
+                extra_data = {}
+                if ml_features:
+                    extra_data['ml_features'] = ml_features
+                if chop is not None:
+                    extra_data['chop'] = chop
+                if market_mode:
+                    extra_data['market_mode'] = market_mode
+                
                 futures_signal = TradeSignal(
                     action=action_str,
                     confidence=futures_decision.trading_confidence / 100,
@@ -272,7 +290,7 @@ class HybridTradingLoop:
                     reasoning=futures_decision.reasoning,
                     symbol=symbol,
                     price=price,
-                    extra_data={'ml_features': ml_features} if ml_features else None
+                    extra_data=extra_data if extra_data else None
                 )
                 
                 # Устанавливаем dynamic leverage
