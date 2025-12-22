@@ -170,7 +170,8 @@ class FuturesExecutor(BaseExecutor):
             ttl_minutes = settings.max_hold_time_minutes  # 180 минут
             mode = 'TREND'
             
-            print(f"   📈 ADAPTIVE MODE: TREND (CHOP: {chop:.1f if chop else 'N/A'})")
+            chop_str = f"{chop:.1f}" if chop is not None else "N/A"
+            print(f"   📈 ADAPTIVE MODE: TREND (CHOP: {chop_str})")
             print(f"      TP: {tp_pct}%, SL: {sl_pct}%, TTL: {ttl_minutes}m")
         
         # Обновляем текущие значения

@@ -34,45 +34,47 @@ class FuturesDecision:
 
 class FuturesBrain:
     """
-    Мозг для фьючерсной торговли
+    Мозг для фьючерсной торговли (GOLDEN STANDARD v6.3)
     
     Smart Scaling:
     - Raw ML 0.50 -> Trading Conf 50%
     - Raw ML 0.575 -> Trading Conf 75%
     - Raw ML 0.65+ -> Trading Conf 100%
     
-    Weighted Voting:
-    - Conservative (вес 3): Trading Conf > 80% + TA confirm
-    - Balanced (вес 2): Trading Conf > 60% + TA confirm
-    - Aggressive (вес 1): Trading Conf > 50% (без TA)
-    - ВХОД: Sum(Weights) >= 3
+    Weighted Voting (GOLDEN STANDARD):
+    - Conservative (вес 3): Trading Conf > 75% + TA confirm
+    - Balanced (вес 2): Trading Conf > 60% + NO TA required
+    - Aggressive (вес 1): Trading Conf > 55% (без TA)
+    - ВХОД: Sum(Weights) >= 2
     
     Dynamic Leverage:
     - Conf < 60%: 2x
     - Conf 60-80%: 5x
     - Conf > 80%: 7x
+    
+    ФИЛОСОФИЯ: Лучше пропустить слабую сделку, чем потерять деньги на шуме.
     """
     
     def __init__(self):
-        # Конфигурация агентов для фьючерсов (TRADING v6.1 - BALANCED MODE)
+        # Конфигурация агентов для фьючерсов (GOLDEN STANDARD - SAFE MODE)
         self.agents = {
             'conservative': {
                 'weight': 3,
-                'min_confidence': 75,  # Только отличные сигналы (повышено с 70%)
+                'min_confidence': 75,  # Только отличные сигналы
                 'require_ta': True,
-                'max_risk': 7  # Повышено с 5 (было слишком строго)
+                'max_risk': 7
             },
             'balanced': {
                 'weight': 2,
-                'min_confidence': 60,  # Хорошие сигналы (без изменений)
-                'require_ta': False,  # УБРАЛИ требование TA (было True)
-                'max_risk': 8  # Повышено с 6 (было слишком строго)
+                'min_confidence': 60,  # ВЕРНУЛИ с 55% → 60% (Золотой Стандарт)
+                'require_ta': False,
+                'max_risk': 8
             },
             'aggressive': {
                 'weight': 1,
-                'min_confidence': 55,  # Средние сигналы (повышено с 50%)
+                'min_confidence': 55,  # ВЕРНУЛИ с 50% → 55% (Золотой Стандарт)
                 'require_ta': False,
-                'max_risk': 9  # Повышено с 7 (было слишком строго)
+                'max_risk': 9
             }
         }
         
