@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📈 FUTURES Dashboard</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+    
+    <div class="container fade-in">
+        <!-- Hero Section -->
+        <header class="hero">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="icon">📈</span>
+                    FUTURES Dashboard
+                </h1>
+                <div class="hero-balance">
+                    <div class="balance-label">Virtual Balance</div>
+                    <div class="balance-value" id="current-balance">$100.00</div>
+                    <div class="balance-change" id="balance-change">+0.00%</div>
+                </div>
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Demo Trading</span>
+            </div>
+        </header>
+
+        <!-- System Status -->
+        <div class="glass-panel">
+            <h2 class="section-title">
+                <span class="title-icon">🔧</span>
+                System Status
+            </h2>
+            <div class="status-grid">
+                <div class="status-card">
+                    <div class="status-icon" id="status-self-learning-icon">⚪</div>
+                    <div class="status-label">Self-Learning</div>
+                    <div class="status-value" id="status-self-learning-msg">Loading...</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon" id="status-lstm-icon">⚪</div>
+                    <div class="status-label">LSTM Model</div>
+                    <div class="status-value" id="status-lstm-msg">Loading...</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon" id="status-database-icon">⚪</div>
+                    <div class="status-label">Database</div>
+                    <div class="status-value" id="status-database-msg">Loading...</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon" id="status-gatekeeper-icon">⚪</div>
+                    <div class="status-label">Gatekeeper</div>
+                    <div class="status-value" id="status-gatekeeper-msg">Loading...</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon" id="status-news-icon">⚪</div>
+                    <div class="status-label">News Brain</div>
+                    <div class="status-value" id="status-news-msg">Loading...</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon" id="status-api-icon">⚪</div>
+                    <div class="status-label">Bybit API</div>
+                    <div class="status-value" id="status-api-msg">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Panel -->
+        <div class="glass-panel metrics-panel">
+            <div class="metric-item">
+                <div class="metric-icon">📊</div>
+                <div class="metric-content">
+                    <div class="metric-label">Initial Balance</div>
+                    <div class="metric-value" id="initial-balance">$100.00</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">📈</div>
+                <div class="metric-content">
+                    <div class="metric-label">Total Trades</div>
+                    <div class="metric-value" id="total-trades">0</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">🎯</div>
+                <div class="metric-content">
+                    <div class="metric-label">Win Rate</div>
+                    <div class="metric-value" id="winrate">0%</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">💵</div>
+                <div class="metric-content">
+                    <div class="metric-label">Net PnL</div>
+                    <div class="metric-value" id="net-pnl">$0.00</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">⚡</div>
+                <div class="metric-content">
+                    <div class="metric-label">Leverage</div>
+                    <div class="metric-value" id="leverage">5x</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">🧠</div>
+                <div class="metric-content">
+                    <div class="metric-label">ML Samples</div>
+                    <div class="metric-value" id="ml-samples">0</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">🎯</div>
+                <div class="metric-content">
+                    <div class="metric-label">Strategy Tier</div>
+                    <div class="metric-value" id="strategy-tier-metric">-</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">🔄</div>
+                <div class="metric-content">
+                    <div class="metric-label">Hybrid Strategy</div>
+                    <div class="metric-value" id="hybrid-strategy-metric">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Balance Details -->
+        <div class="glass-panel">
+            <h2 class="section-title">
+                <span class="title-icon">💰</span>
+                Balance Details
+            </h2>
+            <div class="balances-grid">
+                <div class="balance-item">
+                    <div class="balance-item-label">Realized PnL</div>
+                    <div class="balance-item-value positive" id="realized-pnl">+$0.00</div>
+                </div>
+                <div class="balance-item">
+                    <div class="balance-item-label">Total Fees</div>
+                    <div class="balance-item-value negative" id="total-fees">-$0.00</div>
+                </div>
+                <div class="balance-item">
+                    <div class="balance-item-label">Open Positions</div>
+                    <div class="balance-item-value" id="open-positions">0</div>
+                </div>
+                <div class="balance-item">
+                    <div class="balance-item-label">Strategy Tier</div>
+                    <div class="balance-item-value" id="strategy-tier">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="glass-panel chart-panel">
+                <h2 class="section-title">
+                    <span class="title-icon">📈</span>
+                    Equity Curve
+                </h2>
+                <div class="chart-container">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="glass-panel chart-panel">
+                <h2 class="section-title">
+                    <span class="title-icon">📊</span>
+                    PnL Distribution
+                </h2>
+                <div class="chart-container">
+                    <canvas id="pnlChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Open Positions -->
+        <div class="glass-panel">
+            <h2 class="section-title">
+                <span class="title-icon">🔥</span>
+                Open Positions
+            </h2>
+            <div id="positions-container" class="positions-grid">
+                <div class="empty-state">No open positions</div>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="glass-panel">
+            <h2 class="section-title">
+                <span class="title-icon">📋</span>
+                Recent Trades
+            </h2>
+            <div class="table-container">
+                <table class="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>Quantity</th>
+                            <th>PnL</th>
+                            <th>Reason</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-body">
+                        <tr><td colspan="8" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <span class="footer-text">Last update: <span id="last-update">--</span></span>
+            </div>
+        </footer>
+    </div>
+
+<script>
+let equityChart, pnlChart;
+
+function initCharts() {
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false }
+        },
+        scales: {
+            x: {
+                grid: { 
+                    color: '#e5e7eb',
+                    drawBorder: false
+                },
+                ticks: { 
+                    color: '#6b7280',
+                    font: { size: 11 }
+                }
+            },
+            y: {
+                grid: { 
+                    color: '#e5e7eb',
+                    drawBorder: false
+                },
+                ticks: { 
+                    color: '#6b7280',
+                    font: { size: 11 }
+                }
+            }
+        }
+    };
+
+    const ctx1 = document.getElementById('equityChart').getContext('2d');
+    equityChart = new Chart(ctx1, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Equity',
+                data: [],
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.4,
+                borderWidth: 3,
+                pointRadius: 0,
+                pointHoverRadius: 5,
+                pointHoverBackgroundColor: '#3b82f6',
+                pointHoverBorderColor: '#ffffff',
+                pointHoverBorderWidth: 2
+            }]
+        },
+        options: chartOptions
+    });
+
+    const ctx2 = document.getElementById('pnlChart').getContext('2d');
+    pnlChart = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'PnL',
+                data: [],
+                backgroundColor: [],
+                borderRadius: 4,
+                borderSkipped: false
+            }]
+        },
+        options: chartOptions
+    });
+}
+
+function fmt(v, d = 2) {
+    return (v !== null && v !== undefined && !isNaN(Number(v))) ? Number(v).toFixed(d) : '0.00';
+}
+
+function formatTime(timeStr) {
+    if (!timeStr) return '-';
+    try {
+        const timePart = timeStr.split(' ')[1];
+        return timePart ? timePart.substring(0, 5) : '-';
+    } catch(e) {
+        return '-';
+    }
+}
+
+function fetchData() {
+    const timestamp = new Date().getTime();
+    fetch('/api/data?_=' + timestamp, {
+        cache: 'no-cache',
+        headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        }
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.error) updateUI(d);
+    })
+    .catch(e => console.error(e));
+}
+
+function updateUI(d) {
+    const futBal = d.futures_balance || {};
+    const stats = d.stats?.futures || {};
+    const positions = d.futures_positions || [];
+    const trades = d.futures_trades || [];
+    
+    // Balance
+    const currentBal = futBal.current_balance || 100;
+    const initialBal = futBal.initial_balance || 100;
+    const realizedPnl = futBal.realized_pnl || 0;
+    const totalFees = futBal.total_fees || 0;
+    const netPnl = futBal.net_pnl || 0;
+    const pnlPct = futBal.pnl_pct || 0;
+    
+    document.getElementById('current-balance').textContent = '$' + fmt(currentBal);
+    document.getElementById('balance-change').textContent = (pnlPct >= 0 ? '+' : '') + fmt(pnlPct) + '%';
+    document.getElementById('balance-change').className = 'balance-change ' + (pnlPct >= 0 ? 'positive' : 'negative');
+    
+    document.getElementById('initial-balance').textContent = '$' + fmt(initialBal);
+    
+    const realizedEl = document.getElementById('realized-pnl');
+    realizedEl.textContent = (realizedPnl >= 0 ? '+$' : '-$') + fmt(Math.abs(realizedPnl));
+    realizedEl.className = 'balance-item-value ' + (realizedPnl >= 0 ? 'positive' : 'negative');
+    
+    const feesEl = document.getElementById('total-fees');
+    feesEl.textContent = '-$' + fmt(totalFees);
+    
+    const netPnlEl = document.getElementById('net-pnl');
+    netPnlEl.textContent = (netPnl >= 0 ? '+$' : '-$') + fmt(Math.abs(netPnl));
+    netPnlEl.className = 'metric-value ' + (netPnl >= 0 ? 'positive' : 'negative');
+    
+    // Metrics
+    const totalTrades = futBal.total_trades || stats.total_trades || 0;
+    const wins = stats.wins || 0;
+    const winrate = stats.winrate || 0;
+    
+    document.getElementById('total-trades').textContent = totalTrades;
+    document.getElementById('winrate').textContent = fmt(winrate, 1) + '%';
+    document.getElementById('open-positions').textContent = positions.length;
+    document.getElementById('leverage').textContent = (futBal.leverage || 5) + 'x';
+    
+    // Strategy Tier
+    const tierInfo = d.tier_info || {};
+    if (tierInfo.current_tier) {
+        const tierNum = tierInfo.tier_id ? tierInfo.tier_id.replace('tier_', '') : '-';
+        document.getElementById('strategy-tier').textContent = tierNum;
+        document.getElementById('strategy-tier-metric').textContent = tierNum;
+    }
+    
+    // Hybrid Strategy
+    const hybridInfo = d.hybrid_strategy_info || {};
+    if (hybridInfo.enabled) {
+        const mode = hybridInfo.market_mode || 'UNKNOWN';
+        const chop = hybridInfo.chop_value || 0;
+        
+        let modeIcon = '❓';
+        let modeText = mode;
+        if (mode === 'TREND') {
+            modeIcon = '🚀';
+            modeText = 'TREND';
+        } else if (mode === 'FLAT') {
+            modeIcon = '🔄';
+            modeText = 'FLAT';
+        }
+        
+        document.getElementById('hybrid-strategy-metric').textContent = modeIcon + ' ' + modeText;
+    } else {
+        document.getElementById('hybrid-strategy-metric').textContent = '❌';
+    }
+    
+    // ML Status
+    updateMLStatus();
+    
+    // Positions
+    if (positions.length > 0) {
+        let html = '';
+        positions.forEach(p => {
+            const sideClass = p.side === 'LONG' ? 'long' : 'short';
+            const pnlClass = p.unrealized_pnl >= 0 ? 'positive' : 'negative';
+            
+            html += `<div class="position-card ${sideClass}">
+                <div class="position-header">
+                    <span class="position-symbol">${p.symbol}</span>
+                    <span class="position-side">${p.side}</span>
+                </div>
+                <div class="position-details">
+                    <div class="position-row">
+                        <span>Size:</span>
+                        <span>${fmt(p.size, 4)}</span>
+                    </div>
+                    <div class="position-row">
+                        <span>Entry:</span>
+                        <span>$${fmt(p.entry_price)}</span>
+                    </div>
+                    <div class="position-row">
+                        <span>Current:</span>
+                        <span>$${fmt(p.mark_price)}</span>
+                    </div>
+                    <div class="position-row">
+                        <span>Leverage:</span>
+                        <span>${p.leverage}x</span>
+                    </div>
+                </div>
+                <div class="position-pnl ${pnlClass}">
+                    ${p.unrealized_pnl >= 0 ? '+' : ''}$${fmt(Math.abs(p.unrealized_pnl))}
+                </div>
+            </div>`;
+        });
+        document.getElementById('positions-container').innerHTML = html;
+    } else {
+        document.getElementById('positions-container').innerHTML = '<div class="empty-state">No open positions</div>';
+    }
+    
+    // Trades table
+    if (trades.length > 0) {
+        let html = '';
+        trades.slice(0, 15).forEach(t => {
+            const pnlClass = t.pnl >= 0 ? 'positive' : 'negative';
+            const sideClass = t.side === 'BUY' ? 'long' : 'short';
+            const sideText = t.side === 'BUY' ? 'LONG' : 'SHORT';
+            
+            html += `<tr>
+                <td>${t.symbol}</td>
+                <td><span class="badge ${sideClass}">${sideText}</span></td>
+                <td>$${fmt(t.entry_price)}</td>
+                <td>$${fmt(t.exit_price)}</td>
+                <td>${fmt(t.quantity, 4)}</td>
+                <td class="${pnlClass}">${t.pnl >= 0 ? '+' : ''}$${fmt(Math.abs(t.pnl))}</td>
+                <td>${t.exit_reason || '-'}</td>
+                <td>${formatTime(t.exit_time)}</td>
+            </tr>`;
+        });
+        document.getElementById('trades-body').innerHTML = html;
+    } else {
+        document.getElementById('trades-body').innerHTML = '<tr><td colspan="8" class="loading">No closed trades</td></tr>';
+    }
+    
+    // Equity chart
+    if (trades.length > 0) {
+        const sortedTrades = [...trades].reverse();
+        let cumPnl = initialBal;
+        const equityData = [cumPnl];
+        const labels = ['Start'];
+        
+        sortedTrades.forEach((t, i) => {
+            cumPnl += (t.pnl || 0);
+            equityData.push(cumPnl);
+            labels.push((i + 1).toString());
+        });
+        
+        equityChart.data.labels = labels;
+        equityChart.data.datasets[0].data = equityData;
+        equityChart.update();
+    }
+    
+    // PnL chart
+    if (trades.length > 0) {
+        const pnls = trades.slice(0, 25).map(t => t.pnl || 0);
+        pnlChart.data.labels = pnls.map((_, i) => i + 1);
+        pnlChart.data.datasets[0].data = pnls;
+        pnlChart.data.datasets[0].backgroundColor = pnls.map(p => 
+            p >= 0 ? '#10b981' : '#ef4444'
+        );
+        pnlChart.update();
+    }
+    
+    document.getElementById('last-update').textContent = new Date().toLocaleTimeString('ru-RU');
+}
+
+async function updateSystemStatus() {
+    try {
+        const response = await fetch('/api/system/status');
+        const data = await response.json();
+        
+        if (data.systems) {
+            updateStatus('self-learning', data.systems.self_learning);
+            updateStatus('lstm', data.systems.lstm_model);
+            updateStatus('database', data.systems.database);
+            updateStatus('gatekeeper', data.systems.gatekeeper);
+            updateStatus('news', data.systems.news_brain);
+            updateStatus('api', data.systems.bybit_api);
+        }
+    } catch (error) {
+        console.error('Error updating system status:', error);
+    }
+}
+
+function updateStatus(systemId, statusData) {
+    const icon = document.getElementById(`status-${systemId}-icon`);
+    const message = document.getElementById(`status-${systemId}-msg`);
+    
+    if (!icon || !message) return;
+    
+    let iconText = '⚪';
+    if (statusData.status === 'ok') iconText = '🟢';
+    else if (statusData.status === 'warning') iconText = '🟡';
+    else if (statusData.status === 'error') iconText = '🔴';
+    
+    icon.textContent = iconText;
+    message.textContent = statusData.message || 'Unknown';
+}
+
+async function updateMLStatus() {
+    try {
+        const response = await fetch('/api/ml/status');
+        const mlStatus = await response.json();
+        
+        if (mlStatus.enabled && mlStatus.ready) {
+            document.getElementById('ml-samples').textContent = mlStatus.learned_samples || 0;
+        } else {
+            document.getElementById('ml-samples').textContent = '-';
+        }
+    } catch (error) {
+        console.error('Error updating ML status:', error);
+    }
+}
+
+// Initialize
+initCharts();
+fetchData();
+setInterval(fetchData, 5000);
+setInterval(updateSystemStatus, 10000);
+updateSystemStatus();
+</script>
+
+</body>
+</html>

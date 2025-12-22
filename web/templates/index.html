@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bybit Trading Bot | Premium Dashboard</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+    
+    <div class="container fade-in">
+        <!-- Hero Section -->
+        <header class="hero">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="icon">🤖</span>
+                    Bybit Trading Bot
+                </h1>
+                <div class="hero-balance">
+                    <div class="balance-label">Total Balance</div>
+                    <div class="balance-value" id="total-balance">$0.00</div>
+                    <div class="balance-change" id="balance-change">+0.00%</div>
+                </div>
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Live Trading</span>
+            </div>
+        </header>
+
+        <!-- Metrics Panel -->
+        <div class="glass-panel metrics-panel">
+            <div class="metric-item">
+                <div class="metric-icon">📊</div>
+                <div class="metric-content">
+                    <div class="metric-label">Initial Balance</div>
+                    <div class="metric-value" id="initial-balance">$0.00</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">📈</div>
+                <div class="metric-content">
+                    <div class="metric-label">Total Trades</div>
+                    <div class="metric-value" id="total-trades">0</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">🎯</div>
+                <div class="metric-content">
+                    <div class="metric-label">Win Rate</div>
+                    <div class="metric-value" id="winrate">0%</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">💵</div>
+                <div class="metric-content">
+                    <div class="metric-label">Total PnL</div>
+                    <div class="metric-value" id="total-pnl">$0.00</div>
+                </div>
+            </div>
+            <div class="metric-divider"></div>
+            
+            <div class="metric-item">
+                <div class="metric-icon">⚡</div>
+                <div class="metric-content">
+                    <div class="metric-label">Strategy Tier</div>
+                    <div class="metric-value" id="strategy-tier">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wallet Balances -->
+        <div class="glass-panel">
+            <h2 class="section-title">
+                <span class="title-icon">💰</span>
+                Wallet Balances
+            </h2>
+            <div class="balances-grid" id="balances-container">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="glass-panel">
+            <h2 class="section-title">
+                <span class="title-icon">📜</span>
+                Recent Closed Trades
+            </h2>
+            <div class="table-container">
+                <table class="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Pair</th>
+                            <th>Side</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>Quantity</th>
+                            <th>PnL</th>
+                            <th>PnL %</th>
+                            <th>Closed At</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-body">
+                        <tr>
+                            <td colspan="8" class="loading">Loading trades...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button class="btn-pagination" id="prev-btn" onclick="prevPage()" disabled>
+                    ← Previous
+                </button>
+                <span class="page-info" id="page-info">Page 1</span>
+                <button class="btn-pagination" id="next-btn" onclick="nextPage()" disabled>
+                    Next →
+                </button>
+            </div>
+        </div>
+
+        <!-- System Logs -->
+        <div class="glass-panel">
+            <h2 class="section-title">
+                <span class="title-icon">📋</span>
+                System Logs
+            </h2>
+            <div class="logs-container" id="logs-container">
+                <div class="loading">Loading logs...</div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <span class="status-dot"></span>
+                <span id="last-update">Last update: --</span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

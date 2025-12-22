@@ -365,8 +365,8 @@ def index():
 
 @app.route('/futures')
 def futures_dashboard():
-    """FUTURES Dashboard"""
-    return render_template('dashboard_futures.html')
+    """FUTURES Dashboard - новый дизайн"""
+    return render_template('futures.html')
 
 @app.route('/hybrid')
 def hybrid_dashboard():
