@@ -1773,7 +1773,8 @@ class FuturesExecutor(BaseExecutor):
     async def _save_trade(self, symbol: str, side: TradeSide, price: float,
                           quantity: float, order_id: str, signal: TradeSignal,
                           position_side: str, stop_loss: float, take_profit: float,
-                          order_type: str = 'MARKET', limit_price: float = None) -> Optional[Trade]:
+                          order_type: str = 'MARKET', limit_price: float = None,
+                          extra_data: dict = None, **kwargs) -> Optional[Trade]:
         try:
             # Рассчитываем комиссию входа (зависит от типа ордера)
             if order_type == 'LIMIT':
@@ -1791,6 +1792,24 @@ class FuturesExecutor(BaseExecutor):
             if hasattr(signal, 'extra_data') and signal.extra_data:
                 ml_features = signal.extra_data.get('ml_features')
             
+            # Базовый extra_data словарь
+            trade_extra_data = {
+                'bybit_order_id': order_id,
+                'confidence': signal.confidence,
+                'executor': 'FuturesExecutor_v7',
+                'leverage': self.leverage,
+                'position_side': position_side,
+                'margin_mode': 'ISOLATED',
+                'virtual_balance': self.virtual_balance,
+                'order_type': order_type,  # LIMIT или MARKET
+                'limit_price': limit_price  # Цена лимитного ордера
+            }
+            
+            # Добавляем переданные extra_data (TTL, market_mode, CHOP и т.д.)
+            if extra_data:
+                trade_extra_data.update(extra_data)
+                print(f"   📊 Extra data: {extra_data}")
+            
             async with async_session() as session:
                 trade = Trade(
                     symbol=symbol,
@@ -1805,17 +1824,7 @@ class FuturesExecutor(BaseExecutor):
                     ai_reasoning=signal.reasoning,
                     market_type='futures',
                     ml_features=ml_features,  # Сохраняем фичи для Self-Learning
-                    extra_data={
-                        'bybit_order_id': order_id,
-                        'confidence': signal.confidence,
-                        'executor': 'FuturesExecutor_v7',
-                        'leverage': self.leverage,
-                        'position_side': position_side,
-                        'margin_mode': 'ISOLATED',
-                        'virtual_balance': self.virtual_balance,
-                        'order_type': order_type,  # LIMIT или MARKET
-                        'limit_price': limit_price  # Цена лимитного ордера
-                    }
+                    extra_data=trade_extra_data
                 )
                 session.add(trade)
                 await session.commit()
