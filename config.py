@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     futures_min_confidence_short: float = 0.60  # Мин. confidence 60% для SHORT (BALANCED - снижено с 65%)
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
     
+    # ПРИМЕЧАНИЕ: Если много "Phantom closes" в логах:
+    # 1. Проверить работу Sync Service: docker logs bybit_sync --tail 50
+    # 2. Перезапустить Sync: docker-compose restart bybit_sync
+    # 3. Phantom closes = позиции уже закрыты на бирже, но бот их видит в БД
+    # 4. Sync Service должен синхронизировать каждые 60 секунд
+    
     # ========== SIMULATED REALISM - SMART GROWTH $100 ==========
     # Реалистичный учёт комиссий для подготовки к Real Trading
     estimated_fee_rate: float = 0.0006  # 0.06% Taker fee (Bybit standard)
@@ -109,9 +115,10 @@ class Settings(BaseSettings):
     mean_reversion_enabled: bool = True  # Включить Mean Reversion во флэте
     
     # CHOP пороги с гистерезисом (избегаем частых переключений)
-    chop_flat_threshold: float = 62.0  # CHOP >= 62 = переход в FLAT (снижено с 65 для активной торговли)
-    chop_trend_threshold: float = 55.0  # CHOP <= 55 = переход в TREND (снижено с 60 для раннего распознавания)
-    # Зона 55-62 = сохраняем текущий режим (гистерезис)
+    # ОБНОВЛЕНО 25.12.2025: Сдвинуты границы для борьбы с "вялым сползанием" (CHOP 50-60)
+    chop_flat_threshold: float = 50.0  # CHOP >= 50 = переход в FLAT (было 62) → Adaptive Scalper активируется раньше
+    chop_trend_threshold: float = 45.0  # CHOP <= 45 = переход в TREND (было 55) → Только сильные тренды
+    # Зона 45-50 = сохраняем текущий режим (гистерезис, сужена с 55-62)
     
     # Mean Reversion параметры (для флэта)
     rsi_oversold: int = 30  # RSI < 30 = перепродан (BUY signal)
@@ -158,7 +165,9 @@ class Settings(BaseSettings):
     # ========== HARD RISK MANAGEMENT (Emergency Brake) ==========
     # Жёсткий контроль убытков на уровне Executor (игнорирует AI)
     hard_stop_loss_percent: float = 0.02  # 2% движения цены против позиции = EMERGENCY EXIT
-    max_hold_time_minutes: int = 180  # 3 часа максимум (180 минут) = ZOMBIE TRADE KILLER
+    max_hold_time_minutes: int = 120  # 2 часа максимум (120 минут) = ZOMBIE TRADE KILLER (было 180)
+    # ОБНОВЛЕНО 25.12.2025: Снижено со 180 до 120 минут для быстрого выхода из "вялого сползания"
+    # Adaptive TTL: FLAT режим → 60 минут (120÷2), TREND режим → 120 минут
     emergency_brake_enabled: bool = True  # Включить Emergency Brake (КРИТИЧНО!)
     
     # Trading Pairs
