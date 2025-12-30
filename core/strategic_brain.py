@@ -72,7 +72,7 @@ class StrategicBrain:
         # Кэш режима с гибким обновлением
         self.current_regime: str = REGIME_SIDEWAYS  # Default: торгуем как обычно
         self.last_update: Optional[datetime] = None
-        self.update_interval_hours: float = 0.5  # Базовый интервал: 30 минут (было 1 час)
+        self.update_interval_hours: float = 0.25  # Базовый интервал: 15 минут (EMERGENCY FIX - было 30 мин)
         
         # Триггеры для принудительного обновления (реакция на изменения)
         # Если BTC изменился на 3%+ с последней проверки -> обновить режим немедленно

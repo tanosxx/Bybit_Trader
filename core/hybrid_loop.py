@@ -21,6 +21,7 @@ from core.executors.futures_executor import get_futures_executor
 from core.futures_brain import get_futures_brain, FuturesAction
 from core.safety_guardian import get_safety_guardian
 from core.ai_logger import get_ai_logger
+from core.risk_manager import get_risk_manager  # ANTI-TILT PROTECTION
 
 from config import settings, is_spot_enabled, is_futures_enabled, get_spot_pairs, get_futures_pairs
 from core.strategy_scaler import get_strategy_scaler
@@ -53,6 +54,9 @@ class HybridTradingLoop:
         # Safety Guardian - автоматический аудит позиций
         self.safety_guardian = get_safety_guardian() if is_futures_enabled() else None
         
+        # Risk Manager - Anti-Tilt Protection (Circuit Breaker + Loss Cooldown)
+        self.risk_manager = get_risk_manager() if is_futures_enabled() else None
+        
         # Strategy Scaler - динамическое масштабирование стратегии
         self.strategy_scaler = get_strategy_scaler()
         
@@ -67,6 +71,8 @@ class HybridTradingLoop:
         if self.futures_executor:
             print(f"   Futures Virtual Balance: ${settings.futures_virtual_balance}")
             print(f"   Futures Leverage: {settings.futures_leverage}x")
+        if self.risk_manager:
+            print(f"   Risk Manager: ✅ Enabled (Anti-Tilt Protection)")
         print(f"   Strategy Scaler: ✅ Enabled (Tier-based auto-scaling)")
     
     async def log(self, level: LogLevel, message: str, extra_data: Dict = None):
@@ -259,6 +265,36 @@ class HybridTradingLoop:
                 print(f"⚠️ AI logging error: {e}")
             
             if futures_decision.action != FuturesAction.SKIP:
+                # ========== ANTI-TILT PROTECTION: Проверка рисков перед открытием ==========
+                if self.risk_manager:
+                    try:
+                        # Получаем текущий баланс
+                        from database.db import async_session
+                        async with async_session() as session:
+                            current_balance = await self.futures_executor.load_balance_from_db()
+                            if current_balance is None:
+                                current_balance = settings.futures_virtual_balance
+                            
+                            # Проверяем все риски
+                            can_trade, risk_reason = await self.risk_manager.can_open_position(
+                                session=session,
+                                symbol=symbol,
+                                current_balance=current_balance
+                            )
+                            
+                            if not can_trade:
+                                # Торговля заблокирована!
+                                print(f"\n{risk_reason}")
+                                print(f"   ⏭️ Skipping {symbol} due to risk limits")
+                                return  # Пропускаем сигнал
+                            else:
+                                # Риски в норме, продолжаем
+                                if "Daily loss check passed" in risk_reason or "Loss cooldown check passed" in risk_reason:
+                                    print(f"   ✅ Risk checks passed")
+                    except Exception as e:
+                        print(f"   ⚠️ Risk Manager check failed: {e}")
+                        # Продолжаем торговлю (fail-safe)
+                
                 # Создаём сигнал с dynamic leverage
                 action_str = 'BUY' if futures_decision.action == FuturesAction.LONG else 'SELL'
                 

@@ -70,10 +70,10 @@ class Settings(BaseSettings):
     leverage: int = 5
     margin_mode: Literal['ISOLATED', 'CROSS'] = 'ISOLATED'
     
-    # ========== TRAILING STOP Settings - SMART GROWTH $100 ==========
+    # ========== TRAILING STOP Settings - ANTI-TILT UPDATE (30.12.2025) ==========
     trailing_stop_enabled: bool = True  # Включить трейлинг-стоп
-    trailing_activation_pct: float = 0.8  # Активация при +0.8% профита (быстрый безубыток)
-    trailing_callback_pct: float = 0.4  # Дистанция трейлинга 0.4% (фиксируем прибыль)
+    trailing_activation_pct: float = 1.0  # Активация при +1.0% профита (УВЕЛИЧЕНО с 0.8% - даём цене "подышать")
+    trailing_callback_pct: float = 0.5  # Дистанция трейлинга 0.5% (УВЕЛИЧЕНО с 0.4% - меньше ложных срабатываний)
     
     # ========== FUNDING RATE Filter ==========
     funding_rate_filter_enabled: bool = True  # Проверять funding rate
@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     futures_max_positions_per_symbol: int = 1  # Макс. 1 позиция на символ
     futures_max_orders_per_symbol: int = 15  # Макс. ордеров на один символ
     futures_max_total_orders: int = 80  # Макс. всего ордеров
-    futures_min_confidence: float = 0.60  # Мин. confidence 60% для LONG (BALANCED - снижено с 65%)
-    futures_min_confidence_short: float = 0.60  # Мин. confidence 60% для SHORT (BALANCED - снижено с 65%)
+    futures_min_confidence: float = 0.70  # Мин. confidence 70% для LONG (EMERGENCY FIX - повышено с 60%)
+    futures_min_confidence_short: float = 0.70  # Мин. confidence 70% для SHORT (EMERGENCY FIX - повышено с 60%)
     futures_check_sl_tp_interval: int = 30  # Проверка SL/TP каждые 30 сек
     
     # ПРИМЕЧАНИЕ: Если много "Phantom closes" в логах:
@@ -169,6 +169,19 @@ class Settings(BaseSettings):
     # ОБНОВЛЕНО 25.12.2025: Снижено со 180 до 120 минут для быстрого выхода из "вялого сползания"
     # Adaptive TTL: FLAT режим → 60 минут (120÷2), TREND режим → 120 минут
     emergency_brake_enabled: bool = True  # Включить Emergency Brake (КРИТИЧНО!)
+    
+    # ========== ANTI-TILT PROTECTION (Circuit Breaker) - 30.12.2025 ==========
+    # Защита от "тильта" - блокировка торговли при превышении дневного лимита убытков
+    daily_loss_limit_enabled: bool = True  # Включить Daily Loss Limit
+    max_daily_loss_percent: float = 0.03  # 3% от баланса максимум убытков за день
+    # При балансе $178 это -$5.34 максимум за день
+    # Если превышено -> блокировка торговли до 00:00 UTC следующего дня
+    
+    # ========== LOSS COOLDOWN (Anti-Whipsaw) - 30.12.2025 ==========
+    # Защита от "пилы" - пауза после убыточной сделки на конкретной паре
+    loss_cooldown_enabled: bool = True  # Включить Loss Cooldown
+    loss_cooldown_minutes: int = 45  # 45 минут пауза после убытка на паре
+    # Предотвращает серию убытков на одной паре в волатильном рынке
     
     # Trading Pairs
     trading_pairs: list = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
