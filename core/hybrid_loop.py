@@ -630,6 +630,7 @@ class HybridTradingLoop:
                         if positions_to_close:
                             print(f"\n🚨 STRATEGIC COMPLIANCE: Closing {len(positions_to_close)} non-compliant positions")
                             
+                            successfully_closed = 0
                             for pos_info in positions_to_close:
                                 trade = pos_info['trade']
                                 reason = pos_info['reason']
@@ -643,17 +644,19 @@ class HybridTradingLoop:
                                     
                                     if result.success:
                                         print(f"   ✅ Closed {trade.symbol} {trade.side.value}: {reason}")
+                                        successfully_closed += 1
                                     else:
                                         print(f"   ⚠️ Failed to close {trade.symbol}: {result.error}")
                                         
                                 except Exception as e:
                                     print(f"   ❌ Error closing {trade.symbol}: {e}")
                             
-                            # Уведомление в Telegram
-                            await self.telegram.notify_strategic_compliance(
-                                regime=current_regime,
-                                positions_closed=len(positions_to_close)
-                            )
+                            # Уведомление в Telegram ТОЛЬКО если реально закрыли позиции
+                            if successfully_closed > 0:
+                                await self.telegram.notify_strategic_compliance(
+                                    regime=current_regime,
+                                    positions_closed=successfully_closed
+                                )
                         
             except Exception as e:
                 print(f"⚠️ Strategic Compliance check error: {e}")

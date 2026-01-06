@@ -21,12 +21,14 @@ class StrategicComplianceEnforcer:
     def __init__(self):
         self.last_regime = None
         self.regime_change_time = None
+        self.last_closed_positions = set()  # Отслеживаем закрытые позиции
+        self.notification_sent_for_regime = None  # Режим для которого отправили уведомление
     
     def enforce_strategic_compliance(
         self, 
         active_positions: List[Dict], 
         current_regime: str
-    ) -> List[Dict]:
+    ) -> tuple[List[Dict], bool]:
         """
         Определяет какие позиции нужно закрыть для соблюдения стратегии
         
@@ -37,30 +39,37 @@ class StrategicComplianceEnforcer:
                 'UNCERTAIN', 'BEAR_CRASH', 'BULL_RUSH', 'SIDEWAYS'
         
         Returns:
-            Список позиций на закрытие с причинами
-            [{'symbol': 'BTCUSDT', 'side': 'BUY', 'reason': '...'}, ...]
+            Tuple: (positions_to_close, should_notify)
+            - positions_to_close: Список позиций на закрытие с причинами
+            - should_notify: True если нужно отправить уведомление
         """
         # Отслеживаем изменение режима
+        regime_changed = False
         if self.last_regime != current_regime:
             print(f"🔄 Strategic Regime changed: {self.last_regime} → {current_regime}")
             self.last_regime = current_regime
             self.regime_change_time = datetime.now()
+            self.notification_sent_for_regime = None  # Сбрасываем флаг уведомления
+            self.last_closed_positions.clear()  # Очищаем список закрытых позиций
+            regime_changed = True
         
         positions_to_close = []
         
         if not active_positions:
-            return positions_to_close
+            return positions_to_close, False
         
         # Логика закрытия по режимам
         if current_regime == "UNCERTAIN":
             # UNCERTAIN: Закрыть ВСЕ позиции (Cash is King)
             for pos in active_positions:
-                positions_to_close.append({
-                    'symbol': pos['symbol'],
-                    'side': pos['side'],
-                    'reason': 'Strategic Compliance: UNCERTAIN regime (Cash is King)',
-                    'regime': current_regime
-                })
+                pos_key = f"{pos['symbol']}_{pos['side']}"
+                if pos_key not in self.last_closed_positions:
+                    positions_to_close.append({
+                        'symbol': pos['symbol'],
+                        'side': pos['side'],
+                        'reason': 'Strategic Compliance: UNCERTAIN regime (Cash is King)',
+                        'regime': current_regime
+                    })
             
             if positions_to_close:
                 print(f"⚠️  UNCERTAIN Regime: Closing ALL {len(positions_to_close)} positions")
@@ -69,12 +78,14 @@ class StrategicComplianceEnforcer:
             # BEAR_CRASH: Закрыть все LONG позиции (только SHORT разрешены)
             for pos in active_positions:
                 if pos['side'] in ['BUY', 'LONG']:
-                    positions_to_close.append({
-                        'symbol': pos['symbol'],
-                        'side': pos['side'],
-                        'reason': 'Strategic Compliance: BEAR_CRASH regime (LONG not allowed)',
-                        'regime': current_regime
-                    })
+                    pos_key = f"{pos['symbol']}_{pos['side']}"
+                    if pos_key not in self.last_closed_positions:
+                        positions_to_close.append({
+                            'symbol': pos['symbol'],
+                            'side': pos['side'],
+                            'reason': 'Strategic Compliance: BEAR_CRASH regime (LONG not allowed)',
+                            'regime': current_regime
+                        })
             
             if positions_to_close:
                 print(f"🐻 BEAR_CRASH Regime: Closing {len(positions_to_close)} LONG positions")
@@ -83,12 +94,14 @@ class StrategicComplianceEnforcer:
             # BULL_RUSH: Закрыть все SHORT позиции (только LONG разрешены)
             for pos in active_positions:
                 if pos['side'] in ['SELL', 'SHORT']:
-                    positions_to_close.append({
-                        'symbol': pos['symbol'],
-                        'side': pos['side'],
-                        'reason': 'Strategic Compliance: BULL_RUSH regime (SHORT not allowed)',
-                        'regime': current_regime
-                    })
+                    pos_key = f"{pos['symbol']}_{pos['side']}"
+                    if pos_key not in self.last_closed_positions:
+                        positions_to_close.append({
+                            'symbol': pos['symbol'],
+                            'side': pos['side'],
+                            'reason': 'Strategic Compliance: BULL_RUSH regime (SHORT not allowed)',
+                            'regime': current_regime
+                        })
             
             if positions_to_close:
                 print(f"🚀 BULL_RUSH Regime: Closing {len(positions_to_close)} SHORT positions")
@@ -97,7 +110,22 @@ class StrategicComplianceEnforcer:
             # SIDEWAYS: Всё разрешено, ничего не закрывать
             pass
         
-        return positions_to_close
+        # Определяем нужно ли отправлять уведомление
+        should_notify = False
+        if positions_to_close:
+            # Отправляем уведомление только если:
+            # 1. Режим изменился (первый раз для нового режима)
+            # 2. ИЛИ появились новые несоответствующие позиции
+            if regime_changed or self.notification_sent_for_regime != current_regime:
+                should_notify = True
+                self.notification_sent_for_regime = current_regime
+                
+                # Запоминаем закрытые позиции
+                for pos in positions_to_close:
+                    pos_key = f"{pos['symbol']}_{pos['side']}"
+                    self.last_closed_positions.add(pos_key)
+        
+        return positions_to_close, should_notify
     
     def get_compliance_status(
         self, 
@@ -116,7 +144,7 @@ class StrategicComplianceEnforcer:
                 'action_required': 'Close 2 positions'
             }
         """
-        positions_to_close = self.enforce_strategic_compliance(active_positions, current_regime)
+        positions_to_close, _ = self.enforce_strategic_compliance(active_positions, current_regime)
         
         return {
             'compliant': len(positions_to_close) == 0,
