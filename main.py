@@ -54,8 +54,78 @@ class SimpleTradingBot:
         self.cycle_count = 0
         self.signals_found = 0
         self.trades_executed = 0
+        self.last_sync_time = datetime.now()
         
         print("✅ Bot initialized successfully")
+    
+    async def sync_positions(self):
+        """
+        Heartbeat Sync - Синхронизация позиций с биржей
+        
+        Логика:
+        1. Получаем реальные позиции с биржи
+        2. Получаем позиции из БД
+        3. Сравниваем и синхронизируем:
+           - Если на бирже НЕТ, а в БД ЕСТЬ → Закрываем в БД (TP/SL сработал)
+           - Если на бирже ЕСТЬ, а в БД НЕТ → Игнорируем (открыто вручную)
+        """
+        try:
+            print("🔄 Syncing positions with exchange...")
+            
+            # 1. Получаем позиции с биржи
+            response = self.executor.client.get_positions(
+                category="linear",
+                settleCoin="USDT"
+            )
+            
+            if response["retCode"] != 0:
+                print(f"⚠️ Sync failed: {response['retMsg']}")
+                return
+            
+            # Фильтруем только открытые позиции
+            exchange_positions = {}
+            for pos in response["result"]["list"]:
+                size = float(pos.get("size", 0))
+                if size > 0:
+                    symbol = pos["symbol"]
+                    exchange_positions[symbol] = {
+                        "side": pos["side"],
+                        "size": size,
+                        "entry_price": float(pos.get("avgPrice", 0))
+                    }
+            
+            # 2. Получаем позиции из БД
+            db_positions = await self.executor.get_open_positions()
+            db_symbols = {pos["symbol"] for pos in db_positions}
+            
+            # 3. Находим "фантомные" позиции (есть в БД, но нет на бирже)
+            phantom_symbols = db_symbols - set(exchange_positions.keys())
+            
+            if phantom_symbols:
+                print(f"👻 Found {len(phantom_symbols)} phantom position(s): {', '.join(phantom_symbols)}")
+                
+                # Закрываем фантомные позиции в БД
+                for symbol in phantom_symbols:
+                    # Находим позицию в БД
+                    pos = next((p for p in db_positions if p["symbol"] == symbol), None)
+                    if pos:
+                        print(f"   Closing phantom position: {symbol}")
+                        await self.executor.close_position_in_db(
+                            symbol=symbol,
+                            exit_price=pos["entry_price"],  # Используем entry price как exit
+                            reason="Closed on exchange (TP/SL triggered)"
+                        )
+            else:
+                print("✅ All positions synced")
+            
+            # 4. Проверяем позиции открытые вручную (есть на бирже, но нет в БД)
+            manual_symbols = set(exchange_positions.keys()) - db_symbols
+            if manual_symbols:
+                print(f"⚠️ Found {len(manual_symbols)} manual position(s): {', '.join(manual_symbols)}")
+                print("   (Ignoring - opened manually)")
+            
+        except Exception as e:
+            print(f"❌ Sync error: {e}")
     
     async def run(self):
         """Основной цикл бота"""
@@ -92,10 +162,15 @@ class SimpleTradingBot:
                     for pos in positions:
                         print(f"   {pos['symbol']}: {pos['side']} @ {pos['entry_price']:.2f}")
                 
-                # 3. Проверить статус позиций (закрылись ли по TP/SL)
+                # 3. Синхронизация с биржей (каждые 30 секунд)
+                if (datetime.now() - self.last_sync_time).total_seconds() >= settings.sync_positions_interval:
+                    await self.sync_positions()
+                    self.last_sync_time = datetime.now()
+                
+                # 4. Проверить статус позиций (закрылись ли по TP/SL)
                 await self.executor.check_positions()
                 
-                # 4. Сканировать рынки на сигналы
+                # 5. Сканировать рынки на сигналы
                 print("\n🔍 Scanning markets...")
                 signals = await self.strategy.scan_markets()
                 
@@ -103,7 +178,7 @@ class SimpleTradingBot:
                     self.signals_found += len(signals)
                     print(f"✅ Found {len(signals)} signal(s)")
                     
-                    # 5. Исполнить сигналы
+                    # 6. Исполнить сигналы
                     for signal in signals:
                         # Проверяем лимит позиций
                         if len(positions) >= settings.futures_max_open_positions:
@@ -136,14 +211,14 @@ class SimpleTradingBot:
                 else:
                     print("⏸️  No signals found")
                 
-                # 6. Статистика
+                # 7. Статистика
                 print("\n📊 SESSION STATS:")
                 print(f"   Cycles: {self.cycle_count}")
                 print(f"   Signals Found: {self.signals_found}")
                 print(f"   Trades Executed: {self.trades_executed}")
                 print("=" * 80)
                 
-                # 7. Ждём следующего цикла
+                # 8. Ждём следующего цикла
                 print(f"\n⏳ Waiting {settings.scan_interval_seconds}s...\n")
                 await asyncio.sleep(settings.scan_interval_seconds)
                 

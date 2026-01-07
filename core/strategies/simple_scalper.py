@@ -44,16 +44,17 @@ class SimpleScalper:
         # Параметры стратегии
         self.timeframe = "15"  # 15 минут
         self.rsi_period = 14
-        self.rsi_oversold = 30
-        self.rsi_overbought = 70
+        self.rsi_oversold = 35  # Смягчено с 30
+        self.rsi_overbought = 65  # Смягчено с 70
         
         self.bb_period = 20
         self.bb_std = 2.0
+        self.require_bb_touch = True  # Фильтр безопасности
         
         self.take_profit_pct = 1.5  # +1.5%
         self.stop_loss_pct = 2.0    # -2.0%
         
-        # Торговые пары
+        # Торговые пары (10 пар)
         self.symbols = settings.futures_pairs
         
         # Кэш свечей

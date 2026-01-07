@@ -41,13 +41,17 @@ class Settings(BaseSettings):
     futures_risk_per_trade: float = 0.05  # 5% от баланса на сделку
     futures_margin_mode: Literal['ISOLATED'] = 'ISOLATED'
     
-    # Торговые пары
+    # Торговые пары (9 пар для большей волатильности)
     futures_pairs: List[str] = [
         "BTCUSDT",
         "ETHUSDT",
         "SOLUSDT",
         "BNBUSDT",
-        "XRPUSDT"
+        "XRPUSDT",
+        "DOGEUSDT",
+        "ADAUSDT",
+        "AVAXUSDT",
+        "LINKUSDT"
     ]
     
     # Лимиты позиций
@@ -55,14 +59,15 @@ class Settings(BaseSettings):
     futures_max_positions_per_symbol: int = 1  # 1 позиция на символ
     
     # ========== RSI GRID STRATEGY ==========
-    # RSI параметры
+    # RSI параметры (смягчены для большей частоты сделок)
     rsi_period: int = 14
-    rsi_oversold: int = 30  # Порог перепроданности
-    rsi_overbought: int = 70  # Порог перекупленности
+    rsi_oversold: int = 35  # Было 30 (смягчено)
+    rsi_overbought: int = 65  # Было 70 (смягчено)
     
-    # Bollinger Bands параметры
+    # Bollinger Bands параметры (фильтр безопасности)
     bb_period: int = 20
     bb_std: float = 2.0
+    require_bb_touch: bool = True  # Цена должна касаться линий BB
     
     # Take Profit / Stop Loss
     take_profit_pct: float = 1.5  # +1.5%
@@ -77,6 +82,7 @@ class Settings(BaseSettings):
     # ========== ИНТЕРВАЛЫ ==========
     scan_interval_seconds: int = 60  # Сканировать рынки каждые 60 секунд
     check_positions_interval: int = 30  # Проверять позиции каждые 30 секунд
+    sync_positions_interval: int = 30  # Синхронизация с биржей каждые 30 секунд
 
 
 # Создаём глобальный экземпляр настроек

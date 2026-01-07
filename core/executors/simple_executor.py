@@ -561,6 +561,55 @@ class SimpleExecutor:
                     
         except Exception as e:
             print(f"❌ Error closing position in DB: {e}")
+    
+    async def close_position_in_db(self, symbol: str, exit_price: float, reason: str = "Sync close"):
+        """
+        Публичный метод для закрытия позиции в БД (для синхронизации)
+        
+        Args:
+            symbol: Торговая пара
+            exit_price: Цена выхода
+            reason: Причина закрытия
+        """
+        try:
+            async with async_session() as session:
+                result = await session.execute(
+                    select(Trade).where(
+                        and_(
+                            Trade.symbol == symbol,
+                            Trade.status == TradeStatus.OPEN,
+                            Trade.market_type == "futures"
+                        )
+                    )
+                )
+                trade = result.scalar_one_or_none()
+                
+                if not trade:
+                    print(f"⚠️ No open position found in DB for {symbol}")
+                    return
+                
+                # Рассчитываем PnL
+                if trade.side == TradeSide.BUY:
+                    pnl = (exit_price - trade.entry_price) * trade.quantity
+                else:
+                    pnl = (trade.entry_price - exit_price) * trade.quantity
+                
+                # Обновляем trade
+                trade.exit_price = exit_price
+                trade.pnl = pnl
+                trade.status = TradeStatus.CLOSED
+                trade.exit_time = datetime.now()
+                trade.exit_reason = reason
+                
+                await session.commit()
+                
+                # Обновляем баланс
+                self.current_balance += pnl - (trade.fee_entry + trade.fee_exit)
+                
+                print(f"✅ Position {symbol} closed in DB (PnL: ${pnl:.2f})")
+                
+        except Exception as e:
+            print(f"❌ Error closing position in DB: {e}")
 
 
 # ========== SINGLETON ==========
