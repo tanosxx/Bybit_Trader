@@ -14,10 +14,9 @@ from datetime import datetime
 from typing import Optional
 
 from core.strategies.simple_scalper import get_simple_scalper
-from core.executors.futures_executor import get_futures_executor
-from core.telegram_commander import get_telegram_commander
-from database.db_manager import get_db_manager
-from config import settings
+from core.executors.simple_executor import get_simple_executor
+from core.telegram_commander_v2 import get_telegram_commander
+from config_v2 import settings
 
 
 class SimpleTradingBot:
@@ -26,9 +25,8 @@ class SimpleTradingBot:
     
     Компоненты:
     - SimpleScalper: Стратегия RSI Grid
-    - FuturesExecutor: Исполнение ордеров
-    - TelegramCommander: Управление через Telegram
-    - DatabaseManager: Хранение истории
+    - SimpleExecutor: Исполнение ордеров
+    - TelegramCommander: Управление через Telegram (опционально)
     """
     
     def __init__(self):
@@ -43,16 +41,11 @@ class SimpleTradingBot:
         
         # Инициализация компонентов
         self.strategy = get_simple_scalper()
-        self.executor = get_futures_executor()
-        self.db = get_db_manager()
+        self.executor = get_simple_executor()
         
         # Telegram Commander (опционально)
         try:
-            self.commander = get_telegram_commander(
-                executor=self.executor,
-                ai_brain=None,  # Нет AI в v2
-                strategic_brain=None
-            )
+            self.commander = get_telegram_commander(executor=self.executor)
         except Exception as e:
             print(f"⚠️ Telegram Commander disabled: {e}")
             self.commander = None
@@ -70,6 +63,9 @@ class SimpleTradingBot:
         print(f"   Scan interval: {settings.scan_interval_seconds}s")
         print(f"   Symbols: {', '.join(settings.futures_pairs)}")
         print()
+        
+        # Загружаем баланс из БД
+        await self.executor.load_balance_from_db()
         
         # Запускаем Telegram Commander в фоне
         if self.commander:
@@ -94,10 +90,12 @@ class SimpleTradingBot:
                 
                 if positions:
                     for pos in positions:
-                        pnl_pct = (pos.get('unrealised_pnl', 0) / pos.get('position_value', 1)) * 100
-                        print(f"   {pos['symbol']}: {pos['side']} @ {pos['entry_price']:.2f} (PnL: {pnl_pct:+.2f}%)")
+                        print(f"   {pos['symbol']}: {pos['side']} @ {pos['entry_price']:.2f}")
                 
-                # 3. Сканировать рынки на сигналы
+                # 3. Проверить статус позиций (закрылись ли по TP/SL)
+                await self.executor.check_positions()
+                
+                # 4. Сканировать рынки на сигналы
                 print("\n🔍 Scanning markets...")
                 signals = await self.strategy.scan_markets()
                 
@@ -105,7 +103,7 @@ class SimpleTradingBot:
                     self.signals_found += len(signals)
                     print(f"✅ Found {len(signals)} signal(s)")
                     
-                    # 4. Исполнить сигналы
+                    # 5. Исполнить сигналы
                     for signal in signals:
                         # Проверяем лимит позиций
                         if len(positions) >= settings.futures_max_open_positions:
@@ -120,30 +118,32 @@ class SimpleTradingBot:
                         )
                         
                         # Размещаем ордер
-                        print(f"\n📤 Placing {signal['signal']} order for {signal['symbol']}...")
-                        print(f"   Entry: {signal['price']:.2f}")
-                        print(f"   Quantity: {quantity:.4f}")
-                        print(f"   TP: +{self.strategy.take_profit_pct}%")
-                        print(f"   SL: -{self.strategy.stop_loss_pct}%")
+                        print(f"\n📤 Executing {signal['signal']} signal...")
                         
-                        try:
-                            # Здесь будет логика размещения ордера через executor
-                            # TODO: Implement order placement
+                        result = await self.executor.open_position(
+                            symbol=signal['symbol'],
+                            side=signal['signal'],
+                            price=signal['price'],
+                            quantity=quantity,
+                            reason=signal['reason']
+                        )
+                        
+                        if result:
                             self.trades_executed += 1
-                            print("✅ Order placed successfully")
-                        except Exception as e:
-                            print(f"❌ Order placement failed: {e}")
+                            print("✅ Position opened successfully")
+                        else:
+                            print("❌ Position opening failed")
                 else:
                     print("⏸️  No signals found")
                 
-                # 5. Статистика
+                # 6. Статистика
                 print("\n📊 SESSION STATS:")
                 print(f"   Cycles: {self.cycle_count}")
                 print(f"   Signals Found: {self.signals_found}")
                 print(f"   Trades Executed: {self.trades_executed}")
                 print("=" * 80)
                 
-                # 6. Ждём следующего цикла
+                # 7. Ждём следующего цикла
                 print(f"\n⏳ Waiting {settings.scan_interval_seconds}s...\n")
                 await asyncio.sleep(settings.scan_interval_seconds)
                 
@@ -151,6 +151,8 @@ class SimpleTradingBot:
             print("\n\n🛑 Bot stopped by user")
         except Exception as e:
             print(f"\n\n❌ Fatal error: {e}")
+            import traceback
+            traceback.print_exc()
             raise
         finally:
             # Останавливаем Telegram Commander

@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bybit Trading Bot v2.0 - Simple Profit Edition</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚀</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #16213e 100%);
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container { max-width: 1600px; margin: 0 auto; }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px;
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 255, 136, 0.1) 100%);
+            border-radius: 15px;
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.2);
+        }
+        
+        h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00d4ff, #00ff88, #00d4ff);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradient 3s ease infinite;
+        }
+        
+        @keyframes gradient {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .subtitle {
+            color: #00d4ff;
+            font-size: 1.2em;
+            font-weight: 500;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+            padding: 25px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(0, 212, 255, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+        
+        .stat-card:hover::before { opacity: 1; }
+        
+        .stat-label {
+            font-size: 0.95em;
+            color: #888;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            text-shadow: 0 0 20px currentColor;
+        }
+        
+        .stat-subvalue {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 8px;
+        }
+        
+        .positive { color: #00ff88; }
+        .negative { color: #ff4444; }
+        .neutral { color: #00d4ff; }
+        
+        .section {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+            padding: 25px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 25px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .section-title {
+            font-size: 1.6em;
+            margin-bottom: 20px;
+            color: #00d4ff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+        }
+        
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 30px;
+            background: linear-gradient(180deg, #00d4ff, #00ff88);
+            border-radius: 2px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow: hidden;
+            border-radius: 10px;
+        }
+        
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        th {
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 255, 136, 0.15) 100%);
+            color: #00d4ff;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 1px;
+        }
+        
+        tbody tr { transition: all 0.2s ease; }
+        
+        tbody tr:hover {
+            background: rgba(0, 212, 255, 0.1);
+            transform: scale(1.01);
+        }
+        
+        .badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: inline-block;
+        }
+        
+        .badge-long {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.3), rgba(0, 255, 136, 0.2));
+            color: #00ff88;
+            border: 1px solid rgba(0, 255, 136, 0.5);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+        
+        .badge-short {
+            background: linear-gradient(135deg, rgba(255, 68, 68, 0.3), rgba(255, 68, 68, 0.2));
+            color: #ff4444;
+            border: 1px solid rgba(255, 68, 68, 0.5);
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.3);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .empty-state::before {
+            content: '📊';
+            display: block;
+            font-size: 3em;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        
+        .timestamp {
+            text-align: center;
+            color: #00d4ff;
+            font-size: 0.95em;
+            margin-top: 30px;
+            padding: 15px;
+            background: rgba(0, 212, 255, 0.05);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px;
+            font-size: 1.2em;
+            color: #00d4ff;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        
+        .loading::before {
+            content: '⏳';
+            display: block;
+            font-size: 2em;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Bybit Trading Bot v2.0</h1>
+            <p class="subtitle">Simple Profit Edition | RSI Grid Strategy</p>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">💰 Current Balance</div>
+                <div class="stat-value neutral" id="current-balance">$100.00</div>
+                <div class="stat-subvalue">Initial: <span id="initial-balance">$100.00</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📈 Total PnL</div>
+                <div class="stat-value neutral" id="total-pnl">$0.00 (0%)</div>
+                <div class="stat-subvalue">Gross: <span id="gross-pnl">$0.00</span> | Fees: <span id="total-fees">$0.00</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🎯 Win Rate</div>
+                <div class="stat-value neutral" id="win-rate">0.0%</div>
+                <div class="stat-subvalue"><span id="wins">0</span> Wins / <span id="losses">0</span> Losses</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📊 Total Trades</div>
+                <div class="stat-value neutral" id="total-trades">0</div>
+                <div class="stat-subvalue">Open: <span id="open-positions-count">0</span></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">📊 Open Positions</h2>
+            <div id="positions-container">
+                <div class="loading">Loading positions...</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">📈 Recent Trades</h2>
+            <div id="trades-container">
+                <div class="loading">Loading trades...</div>
+            </div>
+        </div>
+
+        <div class="timestamp" id="last-update">Last update: --</div>
+    </div>
+
+    <script>
+        let refreshInterval;
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/data');
+                const data = await response.json();
+                
+                updateBalance(data.balance);
+                updatePositions(data.positions);
+                updateTrades(data.trades);
+                
+                document.getElementById('last-update').textContent = 'Last update: ' + data.timestamp;
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        function updateBalance(balance) {
+            document.getElementById('current-balance').textContent = '$' + balance.current.toFixed(2);
+            document.getElementById('initial-balance').textContent = '$' + balance.initial.toFixed(2);
+            
+            const pnlElement = document.getElementById('total-pnl');
+            const pnlText = (balance.pnl >= 0 ? '+' : '') + '$' + balance.pnl.toFixed(2) + ' (' + (balance.pnl_pct >= 0 ? '+' : '') + balance.pnl_pct.toFixed(2) + '%)';
+            pnlElement.textContent = pnlText;
+            pnlElement.className = 'stat-value ' + (balance.pnl >= 0 ? 'positive' : 'negative');
+            
+            document.getElementById('gross-pnl').textContent = '$' + balance.total_pnl.toFixed(2);
+            document.getElementById('total-fees').textContent = '$' + balance.total_fees.toFixed(2);
+            
+            const winRateElement = document.getElementById('win-rate');
+            winRateElement.textContent = balance.win_rate.toFixed(1) + '%';
+            winRateElement.className = 'stat-value ' + (balance.win_rate >= 50 ? 'positive' : balance.win_rate >= 40 ? 'neutral' : 'negative');
+            
+            document.getElementById('wins').textContent = balance.wins;
+            document.getElementById('losses').textContent = balance.losses;
+            document.getElementById('total-trades').textContent = balance.total_trades;
+        }
+
+        function updatePositions(positions) {
+            const container = document.getElementById('positions-container');
+            document.getElementById('open-positions-count').textContent = positions.length;
+            
+            if (positions.length === 0) {
+                container.innerHTML = '<div class="empty-state">No open positions</div>';
+                return;
+            }
+            
+            let html = '<table><thead><tr><th>Symbol</th><th>Side</th><th>Entry Price</th><th>Quantity</th><th>TP</th><th>SL</th><th>Entry Time</th></tr></thead><tbody>';
+            
+            positions.forEach(pos => {
+                const sideClass = pos.side === 'BUY' ? 'badge-long' : 'badge-short';
+                const sideName = pos.side === 'BUY' ? 'LONG' : 'SHORT';
+                
+                html += '<tr><td><strong>' + pos.symbol + '</strong></td>';
+                html += '<td><span class="badge ' + sideClass + '">' + sideName + '</span></td>';
+                html += '<td>$' + pos.entry_price.toFixed(2) + '</td>';
+                html += '<td>' + pos.quantity.toFixed(4) + '</td>';
+                html += '<td>' + (pos.tp_price ? '$' + pos.tp_price.toFixed(2) : 'N/A') + '</td>';
+                html += '<td>' + (pos.sl_price ? '$' + pos.sl_price.toFixed(2) : 'N/A') + '</td>';
+                html += '<td>' + pos.entry_time + '</td></tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function updateTrades(trades) {
+            const container = document.getElementById('trades-container');
+            
+            if (trades.length === 0) {
+                container.innerHTML = '<div class="empty-state">No trades yet</div>';
+                return;
+            }
+            
+            let html = '<table><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>PnL</th><th>Net PnL</th><th>Exit Time</th></tr></thead><tbody>';
+            
+            trades.forEach(trade => {
+                const sideClass = trade.side === 'BUY' ? 'badge-long' : 'badge-short';
+                const sideName = trade.side === 'BUY' ? 'LONG' : 'SHORT';
+                const pnlClass = trade.net_pnl >= 0 ? 'positive' : 'negative';
+                
+                html += '<tr><td><strong>' + trade.symbol + '</strong></td>';
+                html += '<td><span class="badge ' + sideClass + '">' + sideName + '</span></td>';
+                html += '<td>$' + trade.entry_price.toFixed(2) + '</td>';
+                html += '<td>' + (trade.exit_price ? '$' + trade.exit_price.toFixed(2) : 'N/A') + '</td>';
+                html += '<td>' + trade.quantity.toFixed(4) + '</td>';
+                html += '<td>' + (trade.pnl >= 0 ? '+' : '') + '$' + trade.pnl.toFixed(2) + '</td>';
+                html += '<td class="' + pnlClass + '">' + (trade.net_pnl >= 0 ? '+' : '') + '$' + trade.net_pnl.toFixed(2) + '</td>';
+                html += '<td>' + trade.exit_time + '</td></tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        fetchData();
+        refreshInterval = setInterval(fetchData, 5000);
+    </script>
+</body>
+</html>

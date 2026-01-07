@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres_bybit:
+    image: postgres:15
+    container_name: bybit_db
+    environment:
+      POSTGRES_USER: bybit_user
+      POSTGRES_PASSWORD: bybit_secure_pass_2024
+      POSTGRES_DB: bybit_trader
+    ports:
+      - "5435:5432"
+    volumes:
+      - bybit_db_data:/var/lib/postgresql/data
+    networks:
+      - bybit_network
+    restart: unless-stopped
+
+  bot:
+    build: .
+    container_name: bybit_bot_v2
+    depends_on:
+      - postgres_bybit
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bybit_user:bybit_secure_pass_2024@postgres_bybit:5432/bybit_trader
+      - BYBIT_API_KEY=${BYBIT_API_KEY}
+      - BYBIT_API_SECRET=${BYBIT_API_SECRET}
+      - BYBIT_TESTNET=${BYBIT_TESTNET}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    volumes:
+      - ./ml_data:/app/ml_data
+    networks:
+      - bybit_network
+    restart: unless-stopped
+    command: python -u main.py
+
+  dashboard:
+    build: .
+    container_name: bybit_dashboard
+    depends_on:
+      - postgres_bybit
+    ports:
+      - "8585:5000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bybit_user:bybit_secure_pass_2024@postgres_bybit:5432/bybit_trader
+      - BYBIT_BASE_URL=${BYBIT_BASE_URL}
+      - BYBIT_API_KEY=${BYBIT_API_KEY}
+      - BYBIT_API_SECRET=${BYBIT_API_SECRET}
+      - BYBIT_TESTNET=${BYBIT_TESTNET}
+    volumes:
+      - ./ml_data:/app/ml_data
+    networks:
+      - bybit_network
+    restart: unless-stopped
+    command: python web/app_v2.py
+
+volumes:
+  bybit_db_data:
+
+networks:
+  bybit_network:
+    driver: bridge

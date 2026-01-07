@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from pybit.unified_trading import HTTP
 
-from config import settings
+from config_v2 import settings
 
 
 class SimpleScalper:

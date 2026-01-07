@@ -1,0 +1,33 @@
+# Core
+python-dotenv==1.0.0
+pydantic==2.10.5
+pydantic-settings==2.7.1
+
+# Async
+aiohttp==3.9.1
+asyncio==3.4.3
+httpx~=0.25.2
+
+# Database
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Data Analysis
+numpy==1.26.2
+pandas==2.1.4
+
+# Dashboard
+flask==3.0.0
+
+# Visualization (для Telegram графиков)
+matplotlib==3.8.2
+
+# Telegram
+python-telegram-bot==20.7
+
+# Bybit API
+pybit==5.6.2
+
+# Technical Analysis
+ta-lib==0.4.28
