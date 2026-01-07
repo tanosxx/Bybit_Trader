@@ -2,65 +2,45 @@
   "strategic": {
     "regime": "SIDEWAYS",
     "reason": "SIDEWAYS",
-    "last_update": "2025-12-14T11:42:04.381335"
+    "last_update": "2026-01-07T16:40:06.818440"
   },
   "news": {
-    "sentiment": 0.0553,
+    "sentiment": 0.0354,
     "latest_headline": "\ud83d\ude10 Neutral market. Follow technical signals.",
-    "count": 5,
-    "last_update": "2025-12-14T12:07:40.771460"
+    "count": 12,
+    "last_update": "2026-01-07T16:43:31.132470"
   },
   "market": {
     "chop_index": {
-      "SOLUSDT": 56.307746886256275,
-      "ETHUSDT": 49.65935389323723,
-      "BTCUSDT": 51.886740480158544,
-      "BNBUSDT": 66.04514746607012
+      "BTCUSDT": 47.02074305481673,
+      "SOLUSDT": 54.86487462692381
     },
     "rsi_values": {
-      "SOLUSDT": 57.14,
-      "ETHUSDT": 62.27,
-      "BTCUSDT": 50.97,
-      "BNBUSDT": 46.67
+      "BTCUSDT": 55.1,
+      "SOLUSDT": 37.72
     },
     "current_prices": {
-      "SOLUSDT": 132.81,
-      "ETHUSDT": 3115.09,
-      "BTCUSDT": 90146.2,
-      "BNBUSDT": 897.3
+      "BTCUSDT": 92141.0,
+      "SOLUSDT": 137.96
     }
   },
   "ml_predictions": {
-    "SOLUSDT": {
+    "BTCUSDT": {
       "decision": "SELL",
       "confidence": 0.55,
       "change_pct": -0.5,
-      "timestamp": "2025-12-14T12:07:34.905330"
+      "timestamp": "2026-01-07T16:43:31.346077"
     },
-    "ETHUSDT": {
+    "SOLUSDT": {
       "decision": "HOLD",
       "confidence": 0.3,
-      "change_pct": -0.008454001363134012,
-      "timestamp": "2025-12-14T12:07:38.122233"
-    },
-    "BTCUSDT": {
-      "decision": "HOLD",
-      "confidence": 0.3,
-      "change_pct": -0.0007673967957089189,
-      "timestamp": "2025-12-14T12:07:40.962494"
-    },
-    "BNBUSDT": {
-      "decision": "HOLD",
-      "confidence": 0.3,
-      "change_pct": -0.008807465201243758,
-      "timestamp": "2025-12-14T12:01:35.917976"
+      "change_pct": -0.007868957618484274,
+      "timestamp": "2026-01-07T16:40:09.844251"
     }
   },
   "gatekeeper": {
-    "BNBUSDT": "SKIP: Mean Reversion: RSI neutral (42.1) - waiting for extremes",
-    "SOLUSDT": "PASS: Mean Reversion",
-    "ETHUSDT": "PASS",
-    "BTCUSDT": "PASS"
+    "BTCUSDT": "SKIP: Mean Reversion: RSI neutral (54.1) - waiting for extremes",
+    "SOLUSDT": "SKIP: Mean Reversion: RSI neutral (41.3) - waiting for extremes"
   },
   "decision_reasoning": {},
   "positions": {
@@ -69,24 +49,24 @@
   },
   "system": {
     "bot_running": true,
-    "last_scan": "2025-12-14T12:07:32.448425",
-    "total_decisions": 44
+    "last_scan": "2026-01-07T16:43:27.503066",
+    "total_decisions": 17
   },
   "performance": {
-    "total_trades": 394,
-    "winning_trades": 106,
-    "losing_trades": 288,
-    "win_rate": 26.903553299492383,
-    "total_pnl": 264.78925999999973,
+    "total_trades": 652,
+    "winning_trades": 199,
+    "losing_trades": 453,
+    "win_rate": 30.52147239263804,
+    "total_pnl": 89.9797599999995,
     "current_balance": 100.0,
-    "performance_24h": -30.16999999999991
+    "performance_24h": -0.06399999999999861
   },
   "recent_trades": [],
   "price_changes_24h": {},
   "volumes": {},
   "ai_reasoning": {
-    "strategic_text": "\ud83e\udde0 STRATEGIC BRAIN ANALYSIS (Updated: 11:42:04)\n\nMarket Regime: SIDEWAYS\n\nGemini Analysis:\nSIDEWAYS\n\nTrading Strategy:\n\u2192 Both LONG and SHORT allowed\n\u2192 Range-bound market, normal trading conditions\nNext Update: 0.5h or \u00b13.0% BTC move",
-    "news_analysis": "\ud83d\udcf0 NEWS ANALYSIS (BTCUSDT)\n\nSentiment Score: 0.055 (NEUTRAL)\nNews Count: 5 articles analyzed\n\nRecommendation:\n\ud83d\ude10 Neutral market. Follow technical signals.\n\nImpact Assessment:\n\ud83d\ude10 NEUTRAL - No strong sentiment\n\u2192 Follow technical signals"
+    "strategic_text": "\ud83e\udde0 STRATEGIC BRAIN ANALYSIS (Updated: 16:40:06)\n\nMarket Regime: SIDEWAYS\n\nAI Gateway Analysis:\nSIDEWAYS\n\nTrading Strategy:\n\u2192 Both LONG and SHORT allowed\n\u2192 Range-bound market, normal trading conditions\n\nLast BTC Price: $92133.90\nNext Update: 0.25h or \u00b13.0% BTC move",
+    "news_analysis": "\ud83d\udcf0 NEWS ANALYSIS (BTCUSDT)\n\nSentiment Score: 0.035 (NEUTRAL)\nNews Count: 12 articles analyzed\n\nRecommendation:\n\ud83d\ude10 Neutral market. Follow technical signals.\n\nImpact Assessment:\n\ud83d\ude10 NEUTRAL - No strong sentiment\n\u2192 Follow technical signals"
   },
   "decision_flow": {
     "step_0_strategic": {

@@ -2,226 +2,192 @@
 
 ## 📍 Текущий статус проекта
 
-**Статус**: 🎮 **АКТИВНАЯ ТОРГОВЛЯ НА DEMO!**
+**Статус**: 🚧 **В разработке - базовая инфраструктура**
 
-**Дата последнего обновления**: 2 декабря 2025, 20:30 UTC
+**Дата последнего обновления**: 26 ноября 2025
 
-**Текущая фаза**: ONLINE LEARNING (САМООБУЧЕНИЕ)
+**Текущая фаза**: Создание базовой инфраструктуры
 
----
+## 🎯 Активная задача
 
-## ✅ ВСЕ ЗАДАЧИ ВЫПОЛНЕНЫ (30 ноября 2025)
+### Что происходит сейчас?
+Создаем базовую инфраструктуру Bybit Trading Bot с переиспользованием кода из PolyAI_Simulator.
 
-### 1. Оптимизация стратегии ✅
-- [x] R:R улучшен до 1:2 (SL 1.5%, TP 3%)
-- [x] Max position size: 15%
-- [x] Max drawdown: 15%
-- [x] Торговые часы: 24/7 (отключены для активности)
-- [x] Фильтр тренда: отключен (торгуем и против тренда)
+**ТЕКУЩИЙ ФОКУС**: Создание core модулей и trading loop
 
-### 2. RSS News система ✅
-- [x] 6 источников (CoinTelegraph, CoinDesk, Decrypt, etc.)
-- [x] VADER sentiment + крипто-словарь (40+ терминов)
-- [x] Кэширование 60 сек
-- [x] 0 ошибок в работе
+### Последние изменения (26 ноября 2025)
 
-### 3. Лимиты позиций ✅
-- [x] `futures_max_open_positions`: 10
-- [x] `max_position_value_usd`: $800
-- [x] `max_total_exposure_usd`: $2500
+1. ✅ **Базовая структура проекта** (ЗАВЕРШЕНО)
+   - Создана структура директорий
+   - `.env` с Bybit API credentials
+   - `config.py` с настройками
+   - `docker-compose.yml` (порты: 5435, 8585)
+   - `requirements.txt`
 
-### 4. Dashboard исправления ✅
-- [x] Время в МСК (UTC+5)
-- [x] Причины закрытия отображаются
-- [x] Открытые позиции с биржи
-- [x] API: `/api/futures/positions`, `/api/futures/trades`
-- [x] Фильтрация phantom cleanup сделок
+2. ✅ **Bybit API интеграция** (ЗАВЕРШЕНО)
+   - `core/bybit_api.py` - Bybit API v5
+   - Методы: get_klines, get_ticker, get_wallet_balance
+   - Методы: place_order, get_open_orders, cancel_order
+   - HMAC SHA256 подпись для аутентификации
 
-### 5. SHORT позиции ✅
-- [x] Бот открывает SHORT позиции
-- [x] CROSS margin mode работает
+3. ✅ **Технический анализ** (ЗАВЕРШЕНО)
+   - `core/technical_analyzer.py`
+   - RSI (Relative Strength Index)
+   - MACD (Moving Average Convergence Divergence)
+   - Bollinger Bands
+   - EMA (Exponential Moving Average)
+   - Анализ тренда и объема
 
----
+4. ✅ **AI Brain** (ЗАВЕРШЕНО)
+   - `core/ai_brain.py`
+   - **Gemini 1.5 Flash** (FREE tier!) - первичный анализ
+   - Специальный промпт чтобы Gemini не тупил
+   - Fallback на OpenRouter (Claude Haiku / GPT-4o mini)
+   - Очистка markdown из ответов
 
-## 📊 Текущее состояние системы
+5. ✅ **Database models** (ЗАВЕРШЕНО)
+   - `database/db.py` - async SQLAlchemy
+   - `database/models.py` - Trade, Candle, SystemLog, WalletHistory
+   - Поддержка JSON для extra_data (agent_type, indicators)
 
-### Бот
-- ✅ Работает на сервере 88.210.10.145
-- ✅ Контейнеры: bybit_bot, bybit_db, bybit_dashboard, bybit_sync
-- ✅ RSS News: 0 errors
-- ✅ Safety Guardian: All positions safe
+6. ✅ **Memory Bank** (ЗАВЕРШЕНО)
+   - `memory-bank/productContext.md` - цели и стратегия
+   - `memory-bank/activeContext.md` - текущий статус
 
-### Открытые позиции (5 шт)
-1. **XRPUSDT** - LONG 319.3 @ $2.20 (7x leverage)
-2. **BNBUSDT** - LONG 0.4 @ $873.3 (7x leverage)
-3. **ETHUSDT** - LONG 0.14 @ $2990.18 (7x leverage)
-4. **SOLUSDT** - SHORT 2.8 @ $135.95 (2x leverage)
-5. **BTCUSDT** - SHORT 0.004 @ $90779.68 (2x leverage)
+7. ✅ **Trader** (ЗАВЕРШЕНО)
+   - `core/trader.py` - виртуальный трейдер
+   - Управление балансом
+   - Открытие/закрытие позиций
+   - Stop Loss / Take Profit автоматически
+   - Статистика торговли
 
-### Dashboard
-- URL: http://88.210.10.145:8585/futures
-- ✅ Открытые позиции отображаются
-- ✅ Время в МСК
-- ✅ Причины закрытия показываются
+8. ✅ **Trading Loop** (ЗАВЕРШЕНО)
+   - `core/loop.py` - главный цикл
+   - Сканирование рынков каждые 60 секунд
+   - Технический анализ → AI анализ → Решение
+   - Проверка SL/TP для открытых позиций
+   - Логирование в БД
 
----
+9. ✅ **Steering** (ЗАВЕРШЕНО)
+   - `.kiro/steering/bybit-project.md` - правила для AI
+   - Memory Bank структура
+   - Definition of Done
 
-## ✅ НОВОЕ: Учёт виртуального баланса с комиссиями (2 декабря 2025)
+10. ✅ **README** (ЗАВЕРШЕНО)
+   - Документация проекта
+   - Быстрый старт
+   - Команды для работы
 
-### Проблема
-- Виртуальный баланс не пересчитывался (оставался $100)
-- Комиссии Bybit не учитывались (0.055% taker fee)
-- На дашборде не отображались реальные затраты
+11. ✅ **Dashboard** (ЗАВЕРШЕНО)
+   - `web/dashboard.py` - Streamlit интерфейс
+   - Метрики: Balance, PnL, Winrate, Open Positions
+   - График equity (Plotly)
+   - Открытые позиции с SL/TP
+   - История сделок (таблица)
+   - Логи системы
+   - Автообновление каждые 10 секунд
 
-### Решение
-1. **BalanceTracker** (`database/balance_tracker.py`)
-   - Рассчитывает текущий баланс: `initial + realized_pnl - total_fees`
-   - Учитывает комиссии входа и выхода (0.055% каждая)
-   - История баланса по сделкам
+12. ✅ **Скрипты** (ЗАВЕРШЕНО)
+   - `scripts/init_db.py` - инициализация БД
+   - `scripts/test_bybit_api.py` - тест Bybit API
 
-2. **FuturesExecutor** обновлён
-   - Записывает `fee_entry` при открытии позиции
-   - Записывает `fee_exit` при закрытии
-   - Обновляет баланс с учётом net PnL (pnl - fees)
+## 🔄 Следующие шаги
 
-3. **Dashboard** обновлён
-   - Отображает: Realized PnL, Комиссии, Net PnL
-   - Текущий баланс = $100 + Net PnL
-   - Equity curve учитывает комиссии
+### Сегодня (26 ноября) - ДЕПЛОЙ!
+1. ⏳ **Деплой на сервер**
+   - Копирование файлов на 88.210.10.145
+   - Запуск в Docker
+   - Инициализация БД
+   - Тест Bybit API
+   - Тест Gemini API
+   - Первый цикл торговли!
 
-### Формулы
+2. ⏳ **Мониторинг**
+   - Проверка логов
+   - Проверка Dashboard (http://88.210.10.145:8585)
+   - Первые сделки
+
+### Завтра (27 ноября)
+1. ⏳ **Multi-Agent System** - переиспользовать из PolyAI_Simulator
+2. ⏳ **Position Sizer** - динамический размер позиций
+3. ⏳ **Risk Manager** - управление рисками
+4. ⏳ **Telegram Notifier** - уведомления
+
+### Через 2-3 дня
+1. ⏳ **Тестирование на виртуальном балансе**
+2. ⏳ **Сбор статистики**
+3. ⏳ **Оптимизация параметров**
+
+## 🐛 Известные проблемы
+
+### Критические
+- Нет критических проблем
+
+### Некритические
+- ⚠️ **Gemini может иногда тупить** - есть fallback на OpenRouter
+- ⚠️ **Нужно протестировать Bybit API** - пока не запускали
+
+## 📋 Технические детали
+
+### Окружение
+- **Разработка**: Windows (локально) - ТОЛЬКО РЕДАКТИРОВАНИЕ
+- **Продакшн**: Ubuntu VPS (88.210.10.145)
+- **Контейнеризация**: Docker Compose
+
+### Bybit API
 ```
-Entry Fee = entry_price * quantity * 0.055%
-Exit Fee = exit_price * quantity * 0.055%
-Net PnL = Realized PnL - Total Fees
-Current Balance = $100 + Net PnL
-```
-
----
-
-## ✅ НОВОЕ: Online Learning Module (2 декабря 2025, 20:30 UTC)
-
-### Что реализовано
-
-**Self-Learning система на базе River (Adaptive Random Forest):**
-
-1. **Сбор фич при входе** (`ai_brain_local.py`)
-   - 10 фич: RSI, MACD, BB, Trend, Volatility, Volume, News, ML confidence
-   - Сохранение в `ml_features` (JSON) в БД
-
-2. **Предсказание** (`self_learning.py`)
-   - Вероятность успеха сделки (0-1)
-   - Взвешивание: 80% Static ML + 20% Self-Learning
-   - Активация после 50+ сделок
-
-3. **Обучение при выходе** (`position_monitor.py`)
-   - Win = 1, Loss = 0
-   - Автоматическое обучение при закрытии позиции
-   - Сохранение модели каждые 10 обучений
-
-4. **Graceful Degradation**
-   - Если River не установлен → бот работает по старой логике
-   - Если Self-Learning падает → возвращает нейтральный 0.5
-   - Никогда не крашит бота!
-
-### Безопасность
-
-- ✅ Обратная совместимость (бот работает без изменений)
-- ✅ Try-except на всех критических участках
-- ✅ Нейтральные значения при ошибках
-- ✅ Опциональная зависимость (river)
-
-### Файлы
-
-- `core/self_learning.py` - ядро самообучения
-- `database/models.py` - добавлено поле `ml_features`
-- `database/migrations/add_ml_features.sql` - миграция БД
-- `core/ai_brain_local.py` - интеграция предсказаний
-- `core/executors/futures_executor.py` - сохранение фич
-- `core/executors/base_executor.py` - TradeSignal.extra_data
-- `core/hybrid_loop.py` - передача ml_features
-- `core/position_monitor.py` - обучение на результатах
-- `requirements.txt` - добавлен river==0.21.0
-
----
-
-## 🚀 Следующие шаги
-
-1. ✅ **Деплой Self-Learning** - ЗАВЕРШЕНО (2 декабря 2025, 22:15 UTC)
-2. ✅ **Миграция БД** - колонка ml_features добавлена
-3. ✅ **River установлен** - библиотека работает
-4. ✅ **Модуль активен** - SelfLearner инициализирован
-5. ✅ **Обучение модели** - обучена на 500 исторических сделках (22:38 UTC)
-6. ✅ **Система работает** - 7,921 сделок, Win Rate 11.01%, Net PnL $1,324.41
-7. ✅ **Полная проверка** - все контейнеры работают, 30 открытых позиций
-8. ⏳ **Мониторинг улучшений** - отслеживать влияние Self-Learning на Win Rate
-
----
-
-## 📊 ПОЛНАЯ ПРОВЕРКА СИСТЕМЫ (2 декабря 2025, 23:00 UTC)
-
-### Контейнеры
-- ✅ bybit_bot - работает (CPU 0%, RAM 297MB)
-- ✅ bybit_db - работает (CPU 0.07%, RAM 64MB)
-- ✅ bybit_dashboard - работает (порт 8585)
-- ✅ bybit_monitor - работает (отслеживает 30 позиций)
-- ✅ bybit_sync - работает
-
-### Торговая статистика
-- **Всего сделок**: 7,921
-- **Выигрышей**: 872 (11.01% Win Rate)
-- **Total PnL**: $1,345.58
-- **Комиссии**: $21.17
-- **Net PnL**: $1,324.41
-- **Виртуальный баланс**: $1,424.41 (+1,324% ROI!)
-
-### Self-Learning модель
-- **Тип**: ARFClassifier (River)
-- **Обучено на**: 500 исторических сделках
-- **Метрика**: Accuracy 91.60%
-- **Win Rate модели**: 8.4% (42/500)
-- **Размер файла**: 427.1 KB
-- **Статус**: ✅ Активно делает предсказания
-- **Последнее предсказание**: 0.11 (confidence 0.78)
-- **Интеграция**: 80% Static ML + 20% Self-Learning
-
-### Открытые позиции (30)
-- ETHUSDT: 10 LONG
-- SOLUSDT: 15 SHORT
-- BNBUSDT: 2 LONG
-- BTCUSDT: 3 LONG
-- XRPUSDT: 1 LONG
-
-### Последние решения бота
-```
-ML Signal: BUY (75%) + Self-Learning: 0.11 (78%)
-→ Final Decision: BUY (47% = 75%*0.8 + 11%*0.2)
+API Key: lq2uoJ8GlfoEI1Kdgd
+API Secret: hnW8T1Q3eT5DniNmBupmCuOVdm7FCv40byzM
+Testnet: false (mainnet)
 ```
 
-### Safety Guardian
-- Проверок: 11
-- Нарушений: 2
-- Закрыто позиций: 2
-- Emergency PnL: -$1.28
+### Порты
+- PostgreSQL: 5435
+- Dashboard: 8585
 
----
+### Торговые пары
+- BTC/USDT
+- ETH/USDT
 
-## 📁 Изменённые файлы (2 декабря 2025)
+### Параметры
+- Стартовый баланс: $50 (виртуальный)
+- Интервал сканирования: 60 секунд
+- Max открытых позиций: 3
+- Max дневной убыток: $5
 
-### Новые файлы
-- `database/balance_tracker.py` - трекер виртуального баланса с комиссиями
+## 🎓 Обучение
 
-### Обновлённые файлы
-- `core/executors/futures_executor.py` - запись комиссий в БД, net PnL
-- `web/app.py` - API `get_futures_virtual_balance()` с учётом комиссий
-- `web/templates/dashboard_futures.html` - отображение комиссий и net PnL
-- `memory-bank/activeContext.md` - текущий контекст
+### Переиспользование кода из PolyAI_Simulator
+- ✅ Multi-Agent System (будет symlink)
+- ✅ Position Sizer (будет symlink)
+- ✅ Risk Manager (будет symlink)
+- ✅ Telegram Notifier (будет symlink)
 
----
+### Новый код для Bybit
+- ✅ Bybit API
+- ✅ Technical Analyzer
+- ✅ AI Brain (адаптированный)
+- ⏳ Trading Loop (адаптированный)
+- ⏳ Dashboard (адаптированный)
 
-## 🎯 Ожидаемые результаты
+## 🔐 Безопасность
 
-- Win Rate: 55-65%
-- Profit Factor: 1.3-1.8
-- Max Drawdown: < 15%
-- R:R: 1:2
+### Текущие меры
+- ✅ API ключи в `.env` (не в git)
+- ✅ Docker изоляция
+- ✅ PostgreSQL с паролем
+- ✅ Виртуальный баланс (не реальные деньги!)
+
+### Рекомендации
+- 🔄 Тестировать только на виртуальном балансе
+- 🔄 Не использовать реальные деньги до 100+ сделок
+- 🔄 Мониторинг логов
+
+## 🎯 Definition of Done
+
+Задача завершена, когда:
+1. ✅ Код написан и работает
+2. ✅ Протестирован в Docker
+3. ✅ Нет ошибок в логах
+4. ✅ Обновлен `activeContext.md`
+5. ✅ Обновлена документация

@@ -71,14 +71,22 @@ class TelegramCommander:
         print(f"   Admin Chat ID: {self.admin_chat_id}")
     
     async def start(self):
-        """Запустить Telegram бота"""
+        """Запустить Telegram бота (игнорируем временные сетевые ошибки)"""
         if not self.bot_token or not self.admin_chat_id:
             print("⚠️ Telegram credentials not set - Commander disabled")
             return
         
         try:
-            # Build application
-            self.app = Application.builder().token(self.bot_token).build()
+            # Build application с увеличенными таймаутами
+            self.app = (
+                Application.builder()
+                .token(self.bot_token)
+                .connect_timeout(30.0)
+                .read_timeout(30.0)
+                .write_timeout(30.0)
+                .pool_timeout(30.0)
+                .build()
+            )
             
             # Register handlers
             self.app.add_handler(CommandHandler("start", self.cmd_start))
@@ -93,28 +101,58 @@ class TelegramCommander:
             # Ignore non-admin messages
             self.app.add_handler(MessageHandler(filters.ALL, self.ignore_non_admin))
             
+            # Add error handler для подавления логов
+            async def error_handler(update, context):
+                """Подавляем логи временных сетевых ошибок"""
+                error = context.error
+                # Игнорируем Conflict и ConnectError (они временные)
+                if "Conflict" in str(error) or "ConnectError" in str(error):
+                    return
+                # Остальные ошибки логируем
+                print(f"⚠️ Telegram error: {error}")
+            
+            self.app.add_error_handler(error_handler)
+            
             # Start polling
             await self.app.initialize()
             await self.app.start()
-            await self.app.updater.start_polling()
+            await self.app.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True  # Пропустить старые обновления
+            )
             
             self.is_running = True
             print("✅ TelegramCommander started (polling)")
+            print("   Note: Temporary network errors are suppressed")
             
         except Exception as e:
             print(f"❌ TelegramCommander start error: {e}")
+            print("   Bot will continue without Telegram commands")
     
     async def stop(self):
-        """Остановить Telegram бота"""
-        if self.app and self.is_running:
+        """Остановить Telegram бота корректно"""
+        if self.app:
             try:
-                await self.app.updater.stop()
-                await self.app.stop()
-                await self.app.shutdown()
                 self.is_running = False
-                print("✅ TelegramCommander stopped")
+                
+                # Остановить polling
+                if self.app.updater and self.app.updater.running:
+                    await self.app.updater.stop()
+                    print("   Updater stopped")
+                
+                # Остановить application
+                if self.app.running:
+                    await self.app.stop()
+                    print("   Application stopped")
+                
+                # Shutdown
+                await self.app.shutdown()
+                print("✅ TelegramCommander stopped gracefully")
+                
             except Exception as e:
                 print(f"⚠️ TelegramCommander stop error: {e}")
+                # Принудительно сбросить флаг
+                self.is_running = False
     
     def _is_admin(self, update: Update) -> bool:
         """Проверить, что сообщение от админа"""
