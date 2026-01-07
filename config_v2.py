@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     # ========== BYBIT API ==========
     bybit_api_key: str
     bybit_api_secret: str
-    bybit_testnet: bool = True  # Demo trading
+    bybit_testnet: bool = False  # False = не testnet
+    bybit_demo: bool = True  # True = DEMO account (не real, не testnet)
     bybit_base_url: str = "https://api-demo.bybit.com"
     
     # ========== DATABASE ==========
@@ -57,6 +58,33 @@ class Settings(BaseSettings):
     # Лимиты позиций
     futures_max_open_positions: int = 3  # Макс. 3 позиции одновременно
     futures_max_positions_per_symbol: int = 1  # 1 позиция на символ
+    futures_max_orders_per_symbol: int = 10  # Макс ордеров на символ
+    futures_max_total_orders: int = 30  # Макс всего ордеров
+    futures_min_confidence: float = 0.50  # Минимальная уверенность
+    
+    # ========== TRAILING STOP ==========
+    trailing_stop_enabled: bool = False  # Отключено в v2 (простота)
+    trailing_activation_pct: float = 1.0  # 1.0%
+    trailing_callback_pct: float = 0.5  # 0.5%
+    
+    # ========== FUNDING RATE FILTER ==========
+    funding_rate_filter_enabled: bool = False  # Отключено в v2
+    funding_rate_max_pct: float = 0.05  # 0.05%
+    funding_time_window_minutes: int = 60  # 60 минут
+    
+    # ========== ORDER TYPE (LIMIT/MARKET) ==========
+    order_type: Literal['LIMIT', 'MARKET'] = 'MARKET'  # v2 использует MARKET
+    order_timeout_seconds: int = 60  # Таймаут для LIMIT ордеров
+    limit_order_fallback_to_market: bool = True  # Fallback на MARKET
+    maker_fee_rate: float = 0.0002  # 0.02% Maker fee
+    taker_fee_rate: float = 0.00055  # 0.055% Taker fee
+    
+    # ========== TIME LIMITS ==========
+    max_hold_time_minutes: int = 180  # Макс время удержания позиции (3 часа)
+    
+    # ========== EMERGENCY BRAKE ==========
+    emergency_brake_enabled: bool = True  # Экстренное закрытие
+    hard_stop_loss_percent: float = 0.05  # 5% жёсткий стоп-лосс
     
     # ========== RSI GRID STRATEGY ==========
     # RSI параметры (смягчены для большей частоты сделок)

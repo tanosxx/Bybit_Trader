@@ -40,7 +40,7 @@ from core.telegram_notifier import get_telegram_reporter
 from database.db import async_session
 from database.models import Trade, TradeStatus, TradeSide
 from sqlalchemy import select
-from config import settings
+from config_v2 import settings
 
 
 class FuturesExecutor(BaseExecutor):

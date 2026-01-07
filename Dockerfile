@@ -8,6 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy config (changes rarely)
 COPY config.py .
+COPY config_v2.py .
+
+# Copy main entry point
+COPY main.py .
 
 # Copy core modules (changes often - separate layer)
 COPY core/ ./core/

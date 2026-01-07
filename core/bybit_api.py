@@ -8,7 +8,7 @@ import time
 import asyncio
 import aiohttp
 from typing import Dict, List, Optional
-from config import settings
+from config_v2 import settings
 
 
 class BybitAPI:

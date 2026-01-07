@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from core.strategies.simple_scalper import get_simple_scalper
-from core.executors.simple_executor import get_simple_executor
+from core.executors.futures_executor import FuturesExecutor
 from core.telegram_commander_v2 import get_telegram_commander
 from config_v2 import settings
 
@@ -41,7 +41,7 @@ class SimpleTradingBot:
         
         # Инициализация компонентов
         self.strategy = get_simple_scalper()
-        self.executor = get_simple_executor()
+        self.executor = FuturesExecutor()
         
         # Telegram Commander (опционально)
         try:
@@ -72,27 +72,14 @@ class SimpleTradingBot:
         try:
             print("🔄 Syncing positions with exchange...")
             
-            # 1. Получаем позиции с биржи
-            response = self.executor.client.get_positions(
-                category="linear",
-                settleCoin="USDT"
-            )
+            # 1. Получаем позиции с биржи (async!)
+            exchange_positions_list = await self.executor.api.get_positions(category="linear")
             
-            if response["retCode"] != 0:
-                print(f"⚠️ Sync failed: {response['retMsg']}")
-                return
-            
-            # Фильтруем только открытые позиции
+            # Преобразуем в dict для удобства
             exchange_positions = {}
-            for pos in response["result"]["list"]:
-                size = float(pos.get("size", 0))
-                if size > 0:
-                    symbol = pos["symbol"]
-                    exchange_positions[symbol] = {
-                        "side": pos["side"],
-                        "size": size,
-                        "entry_price": float(pos.get("avgPrice", 0))
-                    }
+            for pos in exchange_positions_list:
+                if pos["size"] > 0:
+                    exchange_positions[pos["symbol"]] = pos
             
             # 2. Получаем позиции из БД
             db_positions = await self.executor.get_open_positions()
@@ -168,7 +155,8 @@ class SimpleTradingBot:
                     self.last_sync_time = datetime.now()
                 
                 # 4. Проверить статус позиций (закрылись ли по TP/SL)
-                await self.executor.check_positions()
+                # NOTE: FuturesExecutor doesn't have check_positions - sync_positions handles this
+                # await self.executor.check_positions()
                 
                 # 5. Сканировать рынки на сигналы
                 print("\n🔍 Scanning markets...")
