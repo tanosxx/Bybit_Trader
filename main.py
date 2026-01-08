@@ -182,8 +182,13 @@ class SimpleTradingBot:
                     self.last_sync_time = datetime.now()
                 
                 # 4. Проверить статус позиций (закрылись ли по TP/SL)
-                # NOTE: FuturesExecutor doesn't have check_positions - sync_positions handles this
-                # await self.executor.check_positions()
+                print("🔍 Checking TP/SL...")
+                closed_positions = await self.executor.check_and_close_sl_tp()
+                if closed_positions:
+                    for pos in closed_positions:
+                        print(f"   ✅ Closed {pos['symbol']} {pos['side']}: {pos['reason']} (PnL: ${pos.get('pnl', 0):+.2f})")
+                else:
+                    print("   ⏸️  No positions hit TP/SL")
                 
                 # 5. Сканировать рынки на сигналы
                 print("\n🔍 Scanning markets...")
