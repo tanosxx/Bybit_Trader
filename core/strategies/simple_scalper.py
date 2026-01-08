@@ -1,14 +1,23 @@
 """
-Simple RSI Grid Strategy - Mean Reversion Scalper
+Advanced RSI + EMA + ADX Strategy - Trend Following with Mean Reversion
 
-Философия: Простота = Прибыль
-Без ML, без агентов, без сложности. Чистая математика.
+Философия: Простота + Фильтрация = Прибыль
+Торгуем ТОЛЬКО в сильных трендах, избегаем флэта.
 
-Стратегия:
-- Покупаем на перепроданности (RSI < 30 + касание нижней BB)
-- Продаём на перекупленности (RSI > 70 + касание верхней BB)
-- Фиксированные TP/SL без трейлинга
-- Таймфрейм: 15m
+Стратегия (3 индикатора):
+1. RSI - определяет перепроданность/перекупленность
+2. EMA (9/21) - определяет тренд и точки входа
+3. ADX - фильтрует флэт (торгуем только при ADX > 25)
+
+Сигналы:
+- LONG: RSI < 40 + Цена < EMA(21) + ADX > 25 + EMA(9) разворачивается вверх
+- SHORT: RSI > 60 + Цена > EMA(21) + ADX > 25 + EMA(9) разворачивается вниз
+
+Выход:
+- TP: +1.5%
+- SL: -2.0%
+
+Таймфрейм: 15m
 """
 import asyncio
 from datetime import datetime
@@ -44,12 +53,12 @@ class SimpleScalper:
         # Параметры стратегии
         self.timeframe = "15"  # 15 минут
         self.rsi_period = 14
-        self.rsi_oversold = 35  # Смягчено с 30
-        self.rsi_overbought = 65  # Смягчено с 70
+        self.rsi_oversold = 40  # СМЯГЧЕНО для большей частоты!
+        self.rsi_overbought = 60  # СМЯГЧЕНО для большей частоты!
         
         self.bb_period = 20
         self.bb_std = 2.0
-        self.require_bb_touch = True  # Фильтр безопасности
+        self.require_bb_touch = False  # ОТКЛЮЧЕНО для большей частоты сигналов!
         
         self.take_profit_pct = 1.5  # +1.5%
         self.stop_loss_pct = 2.0    # -2.0%
@@ -60,10 +69,12 @@ class SimpleScalper:
         # Кэш свечей
         self.candles_cache: Dict[str, pd.DataFrame] = {}
         
-        print("✅ SimpleScalper initialized")
+        print("✅ SimpleScalper initialized (RSI + EMA + ADX)")
         print(f"   Timeframe: {self.timeframe}m")
         print(f"   RSI: {self.rsi_period} (OS: {self.rsi_oversold}, OB: {self.rsi_overbought})")
-        print(f"   BB: {self.bb_period} periods, {self.bb_std} std")
+        print(f"   EMA: 9/21 (trend detection)")
+        print(f"   ADX: 14 (min 25 for trading)")
+        print(f"   BB: {self.bb_period} periods, {self.bb_std} std (reference)")
         print(f"   TP: +{self.take_profit_pct}%, SL: -{self.stop_loss_pct}%")
         print(f"   Symbols: {', '.join(self.symbols)}")
     
@@ -155,9 +166,80 @@ class SimpleScalper:
             "lower": lower
         }
     
+    def calculate_ema(self, prices: pd.Series, period: int) -> pd.Series:
+        """
+        Рассчитать EMA (Exponential Moving Average)
+        
+        Args:
+            prices: Серия цен закрытия
+            period: Период EMA
+            
+        Returns:
+            Серия EMA значений
+        """
+        return prices.ewm(span=period, adjust=False).mean()
+    
+    def calculate_adx(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Рассчитать ADX (Average Directional Index)
+        
+        ADX показывает СИЛУ тренда (не направление):
+        - ADX > 25 = сильный тренд
+        - ADX < 20 = слабый тренд (флэт)
+        
+        Args:
+            high: Серия максимумов
+            low: Серия минимумов
+            close: Серия закрытий
+            period: Период ADX
+            
+        Returns:
+            Серия ADX значений
+        """
+        # True Range
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=period).mean()
+        
+        # Directional Movement
+        up_move = high - high.shift(1)
+        down_move = low.shift(1) - low
+        
+        plus_dm = pd.Series(0.0, index=high.index)
+        minus_dm = pd.Series(0.0, index=high.index)
+        
+        plus_dm[(up_move > down_move) & (up_move > 0)] = up_move
+        minus_dm[(down_move > up_move) & (down_move > 0)] = down_move
+        
+        # Smoothed DM
+        plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
+        minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
+        
+        # ADX
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        adx = dx.rolling(window=period).mean()
+        
+        return adx
+    
     async def analyze_symbol(self, symbol: str) -> Optional[Dict]:
         """
         Анализ символа и генерация сигнала
+        
+        СТРАТЕГИЯ: RSI + EMA + ADX
+        
+        BUY сигнал когда:
+        - RSI < 40 (перепроданность)
+        - Цена ниже EMA(21) (коррекция в тренде)
+        - ADX > 25 (сильный тренд)
+        - EMA(9) > EMA(21) ИЛИ EMA(9) начинает разворачиваться вверх
+        
+        SELL сигнал когда:
+        - RSI > 60 (перекупленность)
+        - Цена выше EMA(21)
+        - ADX > 25
+        - EMA(9) < EMA(21) ИЛИ EMA(9) начинает разворачиваться вниз
         
         Args:
             symbol: Торговая пара
@@ -168,11 +250,16 @@ class SimpleScalper:
         # Получаем свечи
         df = await self.fetch_candles(symbol, limit=100)
         
-        if df.empty or len(df) < self.bb_period:
+        if df.empty or len(df) < 50:  # Нужно больше данных для ADX
             return None
         
         # Рассчитываем индикаторы
         df["rsi"] = self.calculate_rsi(df["close"], self.rsi_period)
+        df["ema_fast"] = self.calculate_ema(df["close"], 9)
+        df["ema_slow"] = self.calculate_ema(df["close"], 21)
+        df["adx"] = self.calculate_adx(df["high"], df["low"], df["close"], 14)
+        
+        # Bollinger Bands (оставляем для справки)
         bb = self.calculate_bollinger_bands(df["close"], self.bb_period, self.bb_std)
         df["bb_middle"] = bb["middle"]
         df["bb_upper"] = bb["upper"]
@@ -180,29 +267,51 @@ class SimpleScalper:
         
         # Последние значения
         last = df.iloc[-1]
+        prev = df.iloc[-2]
+        
         current_price = last["close"]
         current_rsi = last["rsi"]
-        bb_upper = last["bb_upper"]
-        bb_lower = last["bb_lower"]
-        bb_middle = last["bb_middle"]
+        ema_fast = last["ema_fast"]
+        ema_slow = last["ema_slow"]
+        adx = last["adx"]
+        
+        # Предыдущие значения для определения разворота
+        prev_ema_fast = prev["ema_fast"]
         
         # Проверяем на NaN
-        if pd.isna(current_rsi) or pd.isna(bb_upper) or pd.isna(bb_lower):
+        if pd.isna(current_rsi) or pd.isna(ema_fast) or pd.isna(ema_slow) or pd.isna(adx):
             return None
         
         # Генерируем сигнал
         signal = None
         reason = ""
         
-        # LONG сигнал: RSI < 30 AND price <= Lower BB
-        if current_rsi < self.rsi_oversold and current_price <= bb_lower:
-            signal = "LONG"
-            reason = f"RSI {current_rsi:.1f} < {self.rsi_oversold} AND price {current_price:.2f} <= BB Lower {bb_lower:.2f}"
+        # ФИЛЬТР: ADX должен быть > 25 (сильный тренд)
+        if adx < 25:
+            # Слабый тренд - не торгуем
+            return None
         
-        # SHORT сигнал: RSI > 70 AND price >= Upper BB
-        elif current_rsi > self.rsi_overbought and current_price >= bb_upper:
-            signal = "SHORT"
-            reason = f"RSI {current_rsi:.1f} > {self.rsi_overbought} AND price {current_price:.2f} >= BB Upper {bb_upper:.2f}"
+        # LONG сигнал
+        if current_rsi < self.rsi_oversold and current_price < ema_slow:
+            # Проверяем разворот EMA(9) вверх
+            ema_turning_up = ema_fast > prev_ema_fast
+            
+            if ema_turning_up or ema_fast > ema_slow:
+                signal = "LONG"
+                reason = f"RSI {current_rsi:.1f} < {self.rsi_oversold}, Price {current_price:.2f} < EMA21 {ema_slow:.2f}, ADX {adx:.1f} > 25"
+                if ema_turning_up:
+                    reason += ", EMA9 turning up"
+        
+        # SHORT сигнал
+        elif current_rsi > self.rsi_overbought and current_price > ema_slow:
+            # Проверяем разворот EMA(9) вниз
+            ema_turning_down = ema_fast < prev_ema_fast
+            
+            if ema_turning_down or ema_fast < ema_slow:
+                signal = "SHORT"
+                reason = f"RSI {current_rsi:.1f} > {self.rsi_overbought}, Price {current_price:.2f} > EMA21 {ema_slow:.2f}, ADX {adx:.1f} > 25"
+                if ema_turning_down:
+                    reason += ", EMA9 turning down"
         
         if signal:
             return {
@@ -210,9 +319,12 @@ class SimpleScalper:
                 "signal": signal,
                 "price": current_price,
                 "rsi": current_rsi,
-                "bb_upper": bb_upper,
-                "bb_middle": bb_middle,
-                "bb_lower": bb_lower,
+                "ema_fast": ema_fast,
+                "ema_slow": ema_slow,
+                "adx": adx,
+                "bb_upper": last["bb_upper"],
+                "bb_middle": last["bb_middle"],
+                "bb_lower": last["bb_lower"],
                 "reason": reason,
                 "timestamp": datetime.now()
             }

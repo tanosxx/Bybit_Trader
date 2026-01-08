@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     futures_risk_per_trade: float = 0.05  # 5% от баланса на сделку
     futures_margin_mode: Literal['ISOLATED'] = 'ISOLATED'
     
-    # Торговые пары (9 пар для большей волатильности)
+    # Торговые пары (14 пар для максимума возможностей!)
     futures_pairs: List[str] = [
         "BTCUSDT",
         "ETHUSDT",
@@ -52,14 +52,19 @@ class Settings(BaseSettings):
         "DOGEUSDT",
         "ADAUSDT",
         "AVAXUSDT",
-        "LINKUSDT"
+        "LINKUSDT",
+        "MATICUSDT",
+        "DOTUSDT",
+        "ATOMUSDT",
+        "LTCUSDT",
+        "UNIUSDT"
     ]
     
-    # Лимиты позиций
-    futures_max_open_positions: int = 3  # Макс. 3 позиции одновременно
+    # Лимиты позиций (увеличено для большей активности)
+    futures_max_open_positions: int = 5  # Макс. 5 позиций одновременно
     futures_max_positions_per_symbol: int = 1  # 1 позиция на символ
     futures_max_orders_per_symbol: int = 10  # Макс ордеров на символ
-    futures_max_total_orders: int = 30  # Макс всего ордеров
+    futures_max_total_orders: int = 50  # Макс всего ордеров
     futures_min_confidence: float = 0.50  # Минимальная уверенность
     
     # ========== TRAILING STOP ==========
@@ -108,8 +113,8 @@ class Settings(BaseSettings):
     estimated_fee_rate: float = 0.0006  # 0.06% Taker fee
     
     # ========== ИНТЕРВАЛЫ ==========
-    scan_interval_seconds: int = 60  # Сканировать рынки каждые 60 секунд
-    check_positions_interval: int = 30  # Проверять позиции каждые 30 секунд
+    scan_interval_seconds: int = 30  # Сканировать рынки каждые 30 секунд (АГРЕССИВНО!)
+    check_positions_interval: int = 15  # Проверять позиции каждые 15 секунд
     sync_positions_interval: int = 30  # Синхронизация с биржей каждые 30 секунд
 
 

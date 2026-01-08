@@ -105,11 +105,38 @@ class SimpleTradingBot:
             else:
                 print("✅ All positions synced")
             
-            # 4. Проверяем позиции открытые вручную (есть на бирже, но нет в БД)
+            # 4. ЗАКРЫВАЕМ позиции открытые вручную (есть на бирже, но нет в БД)
             manual_symbols = set(exchange_positions.keys()) - db_symbols
             if manual_symbols:
-                print(f"⚠️ Found {len(manual_symbols)} manual position(s): {', '.join(manual_symbols)}")
-                print("   (Ignoring - opened manually)")
+                print(f"🚨 Found {len(manual_symbols)} UNAUTHORIZED position(s): {', '.join(manual_symbols)}")
+                print("   🔴 CLOSING IMMEDIATELY (not managed by bot)...")
+                
+                # Закрываем каждую неуправляемую позицию
+                for symbol in manual_symbols:
+                    try:
+                        pos = exchange_positions[symbol]
+                        side = pos["side"]  # "Buy" или "Sell"
+                        size = pos["size"]
+                        
+                        # Определяем противоположную сторону для закрытия
+                        close_side = "Sell" if side == "Buy" else "Buy"
+                        
+                        print(f"   🔴 Closing {symbol} {side} {size}...")
+                        
+                        result = await self.executor.api.place_futures_order(
+                            symbol=symbol,
+                            side=close_side,
+                            order_type="Market",
+                            qty=size,
+                            reduce_only=True
+                        )
+                        
+                        if result:
+                            print(f"   ✅ {symbol} closed successfully")
+                        else:
+                            print(f"   ❌ Failed to close {symbol}")
+                    except Exception as e:
+                        print(f"   ❌ Error closing {symbol}: {e}")
             
         except Exception as e:
             print(f"❌ Sync error: {e}")
@@ -173,29 +200,31 @@ class SimpleTradingBot:
                             print(f"⚠️ Max positions reached ({settings.futures_max_open_positions}), skipping signal")
                             continue
                         
-                        # Рассчитываем размер позиции
-                        quantity = self.strategy.calculate_position_size(
-                            balance=balance,
-                            price=signal['price'],
-                            leverage=settings.futures_leverage
-                        )
+                        # Создаём TradeSignal объект для FuturesExecutor
+                        from core.executors.base_executor import TradeSignal
                         
-                        # Размещаем ордер
-                        print(f"\n📤 Executing {signal['signal']} signal...")
+                        # Преобразуем LONG/SHORT в BUY/SELL
+                        action = "BUY" if signal['signal'] in ['BUY', 'LONG'] else "SELL"
                         
-                        result = await self.executor.open_position(
+                        trade_signal = TradeSignal(
                             symbol=signal['symbol'],
-                            side=signal['signal'],
+                            action=action,  # BUY или SELL
                             price=signal['price'],
-                            quantity=quantity,
-                            reason=signal['reason']
+                            confidence=0.75,  # RSI + EMA + ADX имеет высокую уверенность
+                            risk_score=3,  # Средний риск
+                            reasoning=signal['reason']
                         )
                         
-                        if result:
+                        # Размещаем ордер через execute_signal
+                        print(f"\n📤 Executing {signal['signal']} signal for {signal['symbol']}...")
+                        
+                        result = await self.executor.execute_signal(trade_signal)
+                        
+                        if result.success:
                             self.trades_executed += 1
                             print("✅ Position opened successfully")
                         else:
-                            print("❌ Position opening failed")
+                            print(f"❌ Position opening failed: {result.error}")
                 else:
                     print("⏸️  No signals found")
                 
