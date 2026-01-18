@@ -6,8 +6,11 @@ from sqlalchemy.orm import declarative_base
 from config import settings
 
 # Создаем async engine
+# ВАЖНО: Заменяем postgresql:// на postgresql+asyncpg:// для async driver
+database_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://")
+
 engine = create_async_engine(
-    settings.database_url,
+    database_url,
     echo=False,
     pool_pre_ping=True,
     pool_size=10,

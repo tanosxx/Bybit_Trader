@@ -21,8 +21,8 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 
-from pybit.unified_trading import HTTP
 from config_v2 import settings
+from core.bybit_api import get_bybit_api
 from database.db import async_session
 from database.models import Trade, TradeStatus, TradeSide
 from sqlalchemy import select, and_
@@ -41,11 +41,9 @@ class SimpleExecutor:
     
     def __init__(self):
         """Инициализация исполнителя"""
-        self.client = HTTP(
-            testnet=settings.bybit_testnet,
-            api_key=settings.bybit_api_key,
-            api_secret=settings.bybit_api_secret
-        )
+        # Используем кастомный API клиент (работает с demo endpoint!)
+        self.api = get_bybit_api()
+        self.client = self.api  # Для совместимости с sync методами
         
         # Виртуальный баланс
         self.initial_balance = settings.futures_virtual_balance

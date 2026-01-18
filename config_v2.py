@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     futures_risk_per_trade: float = 0.05  # 5% от баланса на сделку
     futures_margin_mode: Literal['ISOLATED'] = 'ISOLATED'
     
-    # Торговые пары (14 пар для максимума возможностей!)
+    # Торговые пары (13 пар - убрали MATICUSDT из-за ошибки парсинга)
     futures_pairs: List[str] = [
         "BTCUSDT",
         "ETHUSDT",
@@ -53,15 +53,15 @@ class Settings(BaseSettings):
         "ADAUSDT",
         "AVAXUSDT",
         "LINKUSDT",
-        "MATICUSDT",
+        # "MATICUSDT",  # УДАЛЕНО - ошибка парсинга 'timestamp'
         "DOTUSDT",
         "ATOMUSDT",
         "LTCUSDT",
         "UNIUSDT"
     ]
     
-    # Лимиты позиций (увеличено для большей активности)
-    futures_max_open_positions: int = 5  # Макс. 5 позиций одновременно
+    # Лимиты позиций (СНИЖЕНО для уменьшения риска)
+    futures_max_open_positions: int = 3  # Макс. 3 позиции одновременно (было 5)
     futures_max_positions_per_symbol: int = 1  # 1 позиция на символ
     futures_max_orders_per_symbol: int = 10  # Макс ордеров на символ
     futures_max_total_orders: int = 50  # Макс всего ордеров
@@ -102,9 +102,9 @@ class Settings(BaseSettings):
     bb_std: float = 2.0
     require_bb_touch: bool = True  # Цена должна касаться линий BB
     
-    # Take Profit / Stop Loss
+    # Take Profit / Stop Loss (ЖЕСТКИЙ СТОП!)
     take_profit_pct: float = 1.5  # +1.5%
-    stop_loss_pct: float = 2.0  # -2.0%
+    stop_loss_pct: float = 2.0  # -2.0% (ОБЯЗАТЕЛЬНЫЙ жёсткий стоп)
     
     # Таймфрейм
     timeframe: str = "15"  # 15 минут

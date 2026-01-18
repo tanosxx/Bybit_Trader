@@ -1367,9 +1367,53 @@ class FuturesExecutor(BaseExecutor):
     
     async def _close_position(self, symbol: str, reason: str) -> ExecutionResult:
         """Закрыть позицию"""
-        current_side = self._current_positions.get(symbol)
-        if not current_side:
-            return ExecutionResult(success=False, market_type=self.market_type, error="No position")
+        # Проверяем позицию на бирже (не в памяти!)
+        exchange_positions = await self.api.get_positions(category="linear")
+        position_on_exchange = None
+        
+        for pos in exchange_positions:
+            if pos["symbol"] == symbol and float(pos.get("size", 0)) > 0:
+                position_on_exchange = pos
+                break
+        
+        if not position_on_exchange:
+            # Позиции нет на бирже - закрываем только в БД
+            print(f"   ⚠️ Position {symbol} not found on exchange, closing in DB only")
+            
+            async with async_session() as session:
+                result = await session.execute(
+                    select(Trade).where(
+                        Trade.symbol == symbol,
+                        Trade.status == TradeStatus.OPEN,
+                        Trade.market_type == 'futures'
+                    ).order_by(Trade.entry_time.desc()).limit(1)
+                )
+                trade = result.scalar_one_or_none()
+                
+                if trade:
+                    # Закрываем в БД по entry price (нет реальной цены)
+                    trade.status = TradeStatus.CLOSED
+                    trade.exit_price = trade.entry_price
+                    trade.exit_time = datetime.utcnow()
+                    trade.pnl = 0  # Нет PnL
+                    trade.pnl_pct = 0
+                    trade.fee_exit = 0
+                    trade.close_reason = f"Phantom close: {reason}"
+                    
+                    session.add(trade)
+                    await session.commit()
+                    
+                    # Удаляем из памяти (если есть)
+                    self._current_positions.pop(symbol, None)
+                    
+                    print(f"   ✅ Closed phantom position in DB")
+                    return ExecutionResult(success=True, market_type=self.market_type)
+                else:
+                    return ExecutionResult(success=False, market_type=self.market_type, error="No trade in DB")
+        
+        # Позиция есть на бирже - закрываем реально
+        current_side = position_on_exchange["side"]  # "Buy" или "Sell"
+        size = float(position_on_exchange["size"])
         
         # Get current price
         ticker = await self.api.get_ticker(symbol)
@@ -1390,11 +1434,34 @@ class FuturesExecutor(BaseExecutor):
             trade = result.scalar_one_or_none()
         
         if not trade:
-            del self._current_positions[symbol]
-            return ExecutionResult(success=False, market_type=self.market_type, error="No trade in DB")
+            # Позиция на бирже, но нет в БД - закрываем на бирже
+            print(f"   ⚠️ Position {symbol} on exchange but not in DB, closing on exchange")
+            
+            close_side = "Sell" if current_side == "Buy" else "Buy"
+            info = await self.get_instrument_info(symbol)
+            qty_str = self.round_qty(size, info['qty_step'], info['min_qty'])
+            
+            endpoint = "/v5/order/create"
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "side": close_side,
+                "orderType": "Market",
+                "qty": qty_str,
+                "positionIdx": 0,
+                "reduceOnly": True
+            }
+            
+            response = await self.api._request("POST", endpoint, params)
+            
+            if not response or response.get("retCode") != 0:
+                return ExecutionResult(success=False, market_type=self.market_type, error=f"Close failed: {response}")
+            
+            print(f"   ✅ Closed unauthorized position on exchange")
+            return ExecutionResult(success=True, market_type=self.market_type)
         
-        # Close order
-        close_side = "Sell" if current_side == 'LONG' else "Buy"
+        # Нормальное закрытие - позиция есть и на бирже и в БД
+        close_side = "Sell" if current_side == "Buy" else "Buy"
         info = await self.get_instrument_info(symbol)
         qty_str = self.round_qty(trade.quantity, info['qty_step'], info['min_qty'])
         
@@ -1417,7 +1484,8 @@ class FuturesExecutor(BaseExecutor):
         order_id = response.get("result", {}).get("orderId", "")
         
         # Calculate PnL
-        if current_side == 'LONG':
+        position_side = 'LONG' if current_side == "Buy" else 'SHORT'
+        if position_side == 'LONG':
             pnl = (price - trade.entry_price) * trade.quantity * self.leverage
         else:
             pnl = (trade.entry_price - price) * trade.quantity * self.leverage
@@ -1459,7 +1527,7 @@ class FuturesExecutor(BaseExecutor):
         
         self.record_trade(net_pnl)
         self.update_balance(net_pnl)
-        del self._current_positions[symbol]
+        self._current_positions.pop(symbol, None)  # Безопасное удаление
         
         # Calculate duration
         duration_minutes = 0

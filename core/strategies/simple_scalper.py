@@ -1,17 +1,23 @@
 """
-Advanced RSI + EMA + ADX Strategy - Trend Following with Mean Reversion
+Advanced RSI + EMA + ADX Strategy v3 - Trend Filter Edition
 
-Философия: Простота + Фильтрация = Прибыль
-Торгуем ТОЛЬКО в сильных трендах, избегаем флэта.
+Философия: Торгуй ПО тренду, НЕ против него!
+Добавлен EMA 200 фильтр для определения глобального тренда.
 
-Стратегия (3 индикатора):
-1. RSI - определяет перепроданность/перекупленность
-2. EMA (9/21) - определяет тренд и точки входа
-3. ADX - фильтрует флэт (торгуем только при ADX > 25)
+Стратегия (4 индикатора):
+1. EMA 200 - ГЛАВНЫЙ фильтр глобального тренда
+2. RSI - определяет перепроданность/перекупленность
+3. EMA (9/21) - определяет локальный тренд и точки входа
+4. ADX - фильтрует флэт (торгуем только при ADX > 25)
+
+ТРЕНДОВЫЙ ФИЛЬТР (EMA 200):
+- Цена > EMA 200 = UPTREND → Разрешены ТОЛЬКО LONG
+- Цена < EMA 200 = DOWNTREND → Разрешены ТОЛЬКО SHORT
 
 Сигналы:
-- LONG: RSI < 40 + Цена < EMA(21) + ADX > 25 + EMA(9) разворачивается вверх
-- SHORT: RSI > 60 + Цена > EMA(21) + ADX > 25 + EMA(9) разворачивается вниз
+- LONG (только в UPTREND): RSI < 40 + Цена < EMA(21) + ADX > 25 + EMA(9) разворачивается вверх
+- SHORT (только в DOWNTREND): RSI > 55 + Цена > EMA(21) + ADX > 25 + EMA(9) разворачивается вниз
+  (RSI 55 вместо 60 для downtrend - легче поймать отскоки)
 
 Выход:
 - TP: +1.5%
@@ -53,8 +59,11 @@ class SimpleScalper:
         # Параметры стратегии
         self.timeframe = "15"  # 15 минут
         self.rsi_period = 14
-        self.rsi_oversold = 40  # СМЯГЧЕНО для большей частоты!
-        self.rsi_overbought = 60  # СМЯГЧЕНО для большей частоты!
+        self.rsi_oversold = 40  # Для LONG в uptrend
+        self.rsi_overbought_uptrend = 60  # Для SHORT в uptrend (не используется)
+        self.rsi_overbought_downtrend = 55  # Для SHORT в downtrend (СМЯГЧЕНО!)
+        
+        self.ema_trend_period = 200  # EMA 200 - ГЛАВНЫЙ трендовый фильтр
         
         self.bb_period = 20
         self.bb_std = 2.0
@@ -63,18 +72,18 @@ class SimpleScalper:
         self.take_profit_pct = 1.5  # +1.5%
         self.stop_loss_pct = 2.0    # -2.0%
         
-        # Торговые пары (10 пар)
+        # Торговые пары (13 пар - убрали MATICUSDT)
         self.symbols = settings.futures_pairs
         
         # Кэш свечей
         self.candles_cache: Dict[str, pd.DataFrame] = {}
         
-        print("✅ SimpleScalper initialized (RSI + EMA + ADX)")
+        print("✅ SimpleScalper v3 initialized (EMA 200 Trend Filter)")
         print(f"   Timeframe: {self.timeframe}m")
-        print(f"   RSI: {self.rsi_period} (OS: {self.rsi_oversold}, OB: {self.rsi_overbought})")
-        print(f"   EMA: 9/21 (trend detection)")
+        print(f"   EMA 200: TREND FILTER (Price > EMA200 = UPTREND, Price < EMA200 = DOWNTREND)")
+        print(f"   RSI: {self.rsi_period} (LONG: <{self.rsi_oversold}, SHORT: >{self.rsi_overbought_downtrend} in downtrend)")
+        print(f"   EMA: 9/21 (local trend detection)")
         print(f"   ADX: 14 (min 25 for trading)")
-        print(f"   BB: {self.bb_period} periods, {self.bb_std} std (reference)")
         print(f"   TP: +{self.take_profit_pct}%, SL: -{self.stop_loss_pct}%")
         print(f"   Symbols: {', '.join(self.symbols)}")
     
@@ -227,16 +236,22 @@ class SimpleScalper:
         """
         Анализ символа и генерация сигнала
         
-        СТРАТЕГИЯ: RSI + EMA + ADX
+        СТРАТЕГИЯ v3: EMA 200 Trend Filter + RSI + EMA + ADX
         
-        BUY сигнал когда:
+        ГЛАВНОЕ ПРАВИЛО (EMA 200 Trend Filter):
+        - Цена > EMA 200 = UPTREND → Разрешены ТОЛЬКО LONG
+        - Цена < EMA 200 = DOWNTREND → Разрешены ТОЛЬКО SHORT
+        
+        BUY сигнал (только в UPTREND):
+        - Цена > EMA(200) (глобальный uptrend)
         - RSI < 40 (перепроданность)
         - Цена ниже EMA(21) (коррекция в тренде)
         - ADX > 25 (сильный тренд)
         - EMA(9) > EMA(21) ИЛИ EMA(9) начинает разворачиваться вверх
         
-        SELL сигнал когда:
-        - RSI > 60 (перекупленность)
+        SELL сигнал (только в DOWNTREND):
+        - Цена < EMA(200) (глобальный downtrend)
+        - RSI > 55 (перекупленность - СМЯГЧЕНО для downtrend!)
         - Цена выше EMA(21)
         - ADX > 25
         - EMA(9) < EMA(21) ИЛИ EMA(9) начинает разворачиваться вниз
@@ -247,16 +262,17 @@ class SimpleScalper:
         Returns:
             Dict с сигналом или None
         """
-        # Получаем свечи
-        df = await self.fetch_candles(symbol, limit=100)
+        # Получаем свечи (нужно больше для EMA 200)
+        df = await self.fetch_candles(symbol, limit=250)
         
-        if df.empty or len(df) < 50:  # Нужно больше данных для ADX
+        if df.empty or len(df) < 210:  # Нужно минимум 210 свечей для EMA 200
             return None
         
         # Рассчитываем индикаторы
         df["rsi"] = self.calculate_rsi(df["close"], self.rsi_period)
         df["ema_fast"] = self.calculate_ema(df["close"], 9)
         df["ema_slow"] = self.calculate_ema(df["close"], 21)
+        df["ema_trend"] = self.calculate_ema(df["close"], self.ema_trend_period)  # EMA 200
         df["adx"] = self.calculate_adx(df["high"], df["low"], df["close"], 14)
         
         # Bollinger Bands (оставляем для справки)
@@ -273,14 +289,18 @@ class SimpleScalper:
         current_rsi = last["rsi"]
         ema_fast = last["ema_fast"]
         ema_slow = last["ema_slow"]
+        ema_trend = last["ema_trend"]  # EMA 200
         adx = last["adx"]
         
         # Предыдущие значения для определения разворота
         prev_ema_fast = prev["ema_fast"]
         
         # Проверяем на NaN
-        if pd.isna(current_rsi) or pd.isna(ema_fast) or pd.isna(ema_slow) or pd.isna(adx):
+        if pd.isna(current_rsi) or pd.isna(ema_fast) or pd.isna(ema_slow) or pd.isna(ema_trend) or pd.isna(adx):
             return None
+        
+        # Определяем глобальный тренд (EMA 200)
+        global_trend = "UP" if current_price > ema_trend else "DOWN"
         
         # Генерируем сигнал
         signal = None
@@ -291,27 +311,32 @@ class SimpleScalper:
             # Слабый тренд - не торгуем
             return None
         
-        # LONG сигнал
-        if current_rsi < self.rsi_oversold and current_price < ema_slow:
-            # Проверяем разворот EMA(9) вверх
-            ema_turning_up = ema_fast > prev_ema_fast
-            
-            if ema_turning_up or ema_fast > ema_slow:
-                signal = "LONG"
-                reason = f"RSI {current_rsi:.1f} < {self.rsi_oversold}, Price {current_price:.2f} < EMA21 {ema_slow:.2f}, ADX {adx:.1f} > 25"
-                if ema_turning_up:
-                    reason += ", EMA9 turning up"
+        # LONG сигнал (ТОЛЬКО в UPTREND)
+        if global_trend == "UP":
+            if current_rsi < self.rsi_oversold and current_price < ema_slow:
+                # Проверяем разворот EMA(9) вверх
+                ema_turning_up = ema_fast > prev_ema_fast
+                
+                if ema_turning_up or ema_fast > ema_slow:
+                    signal = "LONG"
+                    reason = f"UPTREND (Price {current_price:.2f} > EMA200 {ema_trend:.2f}), RSI {current_rsi:.1f} < {self.rsi_oversold}, Price < EMA21 {ema_slow:.2f}, ADX {adx:.1f} > 25"
+                    if ema_turning_up:
+                        reason += ", EMA9 turning up"
         
-        # SHORT сигнал
-        elif current_rsi > self.rsi_overbought and current_price > ema_slow:
-            # Проверяем разворот EMA(9) вниз
-            ema_turning_down = ema_fast < prev_ema_fast
+        # SHORT сигнал (ТОЛЬКО в DOWNTREND)
+        elif global_trend == "DOWN":
+            # В downtrend используем СМЯГЧЕННЫЙ порог RSI (55 вместо 60)
+            rsi_threshold = self.rsi_overbought_downtrend
             
-            if ema_turning_down or ema_fast < ema_slow:
-                signal = "SHORT"
-                reason = f"RSI {current_rsi:.1f} > {self.rsi_overbought}, Price {current_price:.2f} > EMA21 {ema_slow:.2f}, ADX {adx:.1f} > 25"
-                if ema_turning_down:
-                    reason += ", EMA9 turning down"
+            if current_rsi > rsi_threshold and current_price > ema_slow:
+                # Проверяем разворот EMA(9) вниз
+                ema_turning_down = ema_fast < prev_ema_fast
+                
+                if ema_turning_down or ema_fast < ema_slow:
+                    signal = "SHORT"
+                    reason = f"DOWNTREND (Price {current_price:.2f} < EMA200 {ema_trend:.2f}), RSI {current_rsi:.1f} > {rsi_threshold}, Price > EMA21 {ema_slow:.2f}, ADX {adx:.1f} > 25"
+                    if ema_turning_down:
+                        reason += ", EMA9 turning down"
         
         if signal:
             return {
@@ -321,6 +346,8 @@ class SimpleScalper:
                 "rsi": current_rsi,
                 "ema_fast": ema_fast,
                 "ema_slow": ema_slow,
+                "ema_trend": ema_trend,  # EMA 200
+                "global_trend": global_trend,  # UP/DOWN
                 "adx": adx,
                 "bb_upper": last["bb_upper"],
                 "bb_middle": last["bb_middle"],

@@ -190,6 +190,16 @@ class SimpleTradingBot:
                 else:
                     print("   ⏸️  No positions hit TP/SL")
                 
+                # 4.5. Emergency Brake - проверка критических рисков (TTL, Hard SL)
+                if settings.emergency_brake_enabled:
+                    print("\n🚨 EMERGENCY BRAKE: Checking critical risks...")
+                    closed_count = await self.executor.execute_emergency_closures()
+                    
+                    if closed_count > 0:
+                        print(f"   ✅ Emergency closed {closed_count} position(s)")
+                    else:
+                        print("   ✅ No emergency risks detected")
+                
                 # 5. Сканировать рынки на сигналы
                 print("\n🔍 Scanning markets...")
                 signals = await self.strategy.scan_markets()
